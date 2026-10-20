@@ -64,6 +64,13 @@ studio2_test(studio2_headless studio2_headless.c)
 studio2_test(dasm_test dasm_test.c)
 add_test(NAME dasm COMMAND dasm_test)
 
+# The core held to MAME read for read, with no RCA code: the tests' own BIOS
+# and game, and CONFIG on the stand-in, against folds of MAME's own traces
+# (tools/ab/README.md).
+studio2_test(mame_trace_test mame_trace_test.c)
+add_test(NAME mame_trace COMMAND mame_trace_test)
+set_tests_properties(mame_trace PROPERTIES TIMEOUT 120)
+
 # The paced host: CONFIG paints, the machine keeps its own frame rate.
 studio2_test(boot_smoke boot_smoke.c)
 add_test(NAME boot_smoke COMMAND boot_smoke)
