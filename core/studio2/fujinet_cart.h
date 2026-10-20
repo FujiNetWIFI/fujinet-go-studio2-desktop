@@ -53,8 +53,10 @@ void studio2_cart_destroy(studio2_cart_t *c);
  *     (DIRECT). A FujiNet app (the "FUJI" claim at $07FC) keeps the mailbox
  *     and goes back to the baked CONFIG through FN_REG_CONFIG; a game alone
  *     needs no FujiNet, so it gets no socket.
- * `boip` is fujinet-pc's BoIP listener ("host:port"). Returns 0, or -1 with
- * the reason (an image the cartridge cannot plan) in `why`. */
+ * `boip` is fujinet-pc's BoIP listener ("host:port"), or "" for none at all
+ * (FujiNet switched off: nothing is dialled, every transaction fails at
+ * once). Returns 0, or -1 with the reason (an image the cartridge cannot
+ * plan) in `why`. */
 int studio2_cart_power_on(studio2_cart_t *c, const uint8_t *image, uint32_t len,
                           const char *boip, bool sync, char *why, int whysz);
 /* Power off (PWR_OK lost): stop the mailbox worker, close the link. */

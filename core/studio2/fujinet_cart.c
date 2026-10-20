@@ -77,6 +77,7 @@ struct studio2_cart {
     bool debug;
     char boip[128];
     bool have_boip;
+    bool link_off;                      /* boip "": FujiNet switched off, never dial */
 
     /* The worker owns fujimail, the socket, the text engine and staging;
      * the CPU thread owns the arena and the view. Pokes reach the arena
@@ -161,7 +162,7 @@ static void c_wait_link(uint32_t ms)
     studio2_cart_t *c = s_cart;
     const uint64_t deadline = now_ms() + ms;
 
-    while (!fujitcp_active() && !atomic_load(&c->stop))
+    while (!c->link_off && !fujitcp_active() && !atomic_load(&c->stop))
     {
         if (fujitcp_init(c->have_boip ? c->boip : NULL) == 0)
             break;
@@ -731,6 +732,7 @@ int studio2_cart_power_on(studio2_cart_t *c, const uint8_t *image, uint32_t len,
     env = getenv("FUJINET_SYNC");
     c->async = !(sync || (env && *env && *env != '0'));
     c->have_boip = boip != NULL;
+    c->link_off = boip && !*boip;
     if (boip)
         snprintf(c->boip, sizeof c->boip, "%s", boip);
 
@@ -785,7 +787,8 @@ int studio2_cart_power_on(studio2_cart_t *c, const uint8_t *image, uint32_t len,
     if (c->mailbox_mode)
     {
         fujimail_init(c->debug ? &debug_port : &quiet_port);
-        fujitcp_init(c->have_boip ? c->boip : NULL);
+        if (!c->link_off)
+            fujitcp_init(c->have_boip ? c->boip : NULL);
         fujimail_paint();
         publish_link(c);
         worker_start(c);

@@ -189,9 +189,10 @@ static int host_up(struct studio2session *s, const char *cart_path)
     /* The cartridge dials FujiNet's BoIP port -- the in-process runtime's,
      * or a standalone fujinet-pc's when the runtime is switched off. A
      * session whose FujiNet is disabled outright (fujinet_lib "", the tests)
-     * dials a closed port, so it can never pick up someone else's FujiNet. */
+     * dials nothing, so it can never pick up someone else's FujiNet (and
+     * Windows' two-second refusal of a closed port never holds up power-on). */
     if (s->fujinet_disabled)
-        snprintf(boip, sizeof boip, "127.0.0.1:1");
+        boip[0] = '\0';
     else
         snprintf(boip, sizeof boip, "127.0.0.1:%d", STUDIO2SESSION_BOIP_PORT);
     ho.bios = bios;
