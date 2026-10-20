@@ -3,7 +3,7 @@
 
     tools/ab/mame_ab.py [--bios FILE] [--cart IMAGE | --nocart | --config]
                         [--frames N] [--keys F:P:K:D,...] [--mame-power-on]
-                        [--out DIR]
+                        [--wav] [--out DIR]
 
 Side A is MAME's own studio2 driver: ~/Workspace/mame-studio2/studio2 (a
 studio2 build carrying the firmware's FujiNet graft, pico/studio2/emu),
@@ -13,8 +13,22 @@ cart (DIRECT), as the firmware's Tier A does; add --direct to serve it
 through MAME's FujiNet device on side A too, which compares the cores
 alone. --config runs the baked CONFIG on both sides with the link down;
 --nocart is the console alone (the BIOS's built-in games). Side B is
-build*/core/tests/studio2_headless. Use --mame-power-on for any run with
-the real BIOS: MAME's CPU skips the power-on CLEAR reset (machine.c).
+the newest build*/core/tests/studio2_headless ($HEADLESS overrides).
+
+Use --mame-power-on for any run with the real BIOS: MAME's CPU skips the
+power-on CLEAR reset (machine.c), so IE stays 0, the BIOS's interrupt
+routine never runs and both sides show the DMA of wherever R0 happens to
+point. Press Clear first (--keys 10:C:0:1,14:C:0:0,...) to compare the
+BIOS actually running.
+
+--wav records both sides' audio (MAME's -wavwrite, the headless -wav) and
+compares the beeper's timing: the sign of every sample after aligning on
+the first beep, which MAME's resampler delays a few samples. MAME writes
+the beep at full scale and rings for a sample at each edge; this app's
+gain is 0.25. A beep's start and end may land up to two samples apart
+(MAME updates the stream at its timeslice's time and resamples the beep
+from 1.536 MHz); a disagreement more than two samples from an edge of ours
+is reported.
 
 Frames are compared as pictures (lit or not). MAME's first frame-notifier
 call can come a frame ahead of ours, so the sequences are aligned on the
@@ -38,11 +52,15 @@ W, H = 100, 246
 
 
 def find_headless():
-    for d in sorted(os.listdir(ROOT)):
-        p = os.path.join(ROOT, d, "core", "tests", "studio2_headless")
-        if d.startswith("build") and os.access(p, os.X_OK):
-            return p
-    sys.exit("mame_ab: no build*/core/tests/studio2_headless; build it first")
+    """$HEADLESS, or the newest build*/core/tests/studio2_headless."""
+    if os.environ.get("HEADLESS"):
+        return os.environ["HEADLESS"]
+    found = [os.path.join(ROOT, d, "core", "tests", "studio2_headless")
+             for d in os.listdir(ROOT) if d.startswith("build")]
+    found = [p for p in found if os.access(p, os.X_OK)]
+    if not found:
+        sys.exit("mame_ab: no build*/core/tests/studio2_headless; build it first")
+    return max(found, key=os.path.getmtime)
 
 
 def frames_of(path, bpp):
@@ -71,6 +89,41 @@ def save_pair(path, a, b):
     im.resize((im.width * 3, im.height * 2), Image.NEAREST).save(path)
 
 
+def wav_signs(path):
+    import array
+    import wave
+    w = wave.open(path)
+    a = array.array("h", w.readframes(w.getnframes()))
+    if w.getnchannels() == 2:
+        a = a[0::2]
+    return [1 if v > 2048 else -1 if v < -2048 else 0 for v in a]
+
+
+def compare_wav(a_path, b_path):
+    """The beeper's timing, sample by sample. Returns 0 when every
+    disagreement is within two samples of an edge of ours."""
+    A, B = wav_signs(a_path), wav_signs(b_path)
+    a0 = next((i for i, v in enumerate(A) if v), None)
+    b0 = next((i for i, v in enumerate(B) if v), None)
+    if a0 is None or b0 is None:
+        print("audio: %s beeped, %s did not" % (("MAME", "B") if a0 is not None else
+              ("B", "MAME")) if (a0 is None) != (b0 is None) else "audio: neither side beeped")
+        return 0 if a0 is None and b0 is None else 1
+    lag = a0 - b0
+    n = min(len(A), len(B) + lag)
+    first = max(0, lag)
+    agree = off_edge = 0
+    for i in range(first, n):
+        j = i - lag
+        if A[i] == B[j]:
+            agree += 1
+        elif not (1 < j < len(B) - 2 and len(set(B[j - 2:j + 3])) > 1):
+            off_edge += 1
+    print("audio: aligned at %+d samples, signs agree %d/%d, %d more than 2 samples from an edge"
+          % (lag, agree, n - first, off_edge))
+    return 1 if off_edge else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bios")
@@ -92,6 +145,8 @@ def main():
                     help="side B applies a frame's key events at this line of it")
     ap.add_argument("--mame-power-on", action="store_true",
                     help="side B without the CLEAR pulse (MAME's IE = 0 power-on)")
+    ap.add_argument("--wav", action="store_true",
+                    help="also record and compare both sides' audio")
     ap.add_argument("--out", default=tempfile.gettempdir())
     args = ap.parse_args()
 
@@ -110,6 +165,8 @@ def main():
         cmd += ["-cart", os.path.abspath(args.cart)]
     if args.config:
         env.update(FUJINET="1", FUJINET_TCP="127.0.0.1:1")
+    if args.wav:
+        cmd += ["-wavwrite", os.path.join(tmp, "a.wav")]
     subprocess.run(cmd, cwd=MAME_DIR, env=env, capture_output=True, timeout=600)
 
     bcmd = [find_headless(), "-frames", str(args.frames), "-out", os.path.join(tmp, "b"),
@@ -124,6 +181,8 @@ def main():
         bcmd.append("-mame")
     if args.keyline:
         bcmd += ["-keyline", str(args.keyline)]
+    if args.wav:
+        bcmd += ["-wav", os.path.join(tmp, "b.wav")]
     for ev in filter(None, args.keys.split(",")):
         f, p, k, d = ev.split(":")
         f = max(0, int(f) - args.key_shift)
@@ -161,13 +220,14 @@ def main():
     for fr in args.show:
         if fr < total:
             save_pair(os.path.join(args.out, "s2ab-frame-%05d.png" % fr), A[fr + off], B[fr])
+    audio = compare_wav(os.path.join(tmp, "a.wav"), os.path.join(tmp, "b.wav")) if args.wav else 0
     if n < total:
         path = os.path.join(args.out, "s2ab-mismatch-%05d.png" % n)
         save_pair(path, A[n + off], B[n])
         diff = sum(1 for x, y in zip(A[n + off], B[n]) if x != y)
         print("first mismatch at B frame %d (%d pixels differ): %s" % (n, diff, path))
         return 1
-    return 0
+    return audio
 
 
 if __name__ == "__main__":

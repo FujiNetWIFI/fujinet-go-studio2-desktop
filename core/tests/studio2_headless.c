@@ -19,6 +19,7 @@
  *     -dump FILE      append every frame's picture to FILE, a byte a pixel
  *                     (1 lit, 0 dark): tools/ab/mame_ab.py's side B
  *     -sync           run the mailbox inline (deterministic)
+ *     -wav FILE       the audio, 48 kHz mono 16-bit (the left channel)
  *     -trace FILE     every bus read ("cycle addr data", hex) from frame
  *     -tracefrom F    F (default 0) to -traceto T (default 10): the other
  *     -traceto T      side of tools/ab/abtrace.lua
@@ -112,6 +113,9 @@ int main(int argc, char **argv)
     FILE *dump = NULL;
     int frames = 300, every = 0, nocart = 0, mame = 0, hash = 0, sync = 0, keyline = 0;
     const char *trace_path = NULL;
+    const char *wav_path = NULL;
+    FILE *wav = NULL;
+    uint32_t wav_samples = 0;
     int trace_from = 0, trace_to = 10;
     key_ev_t evs[256];
     int nev = 0;
@@ -144,6 +148,8 @@ int main(int argc, char **argv)
             hash = 1;
         else if (!strcmp(argv[i], "-sync"))
             sync = 1;
+        else if (!strcmp(argv[i], "-wav") && i + 1 < argc)
+            wav_path = argv[++i];
         else if (!strcmp(argv[i], "-trace") && i + 1 < argc)
             trace_path = argv[++i];
         else if (!strcmp(argv[i], "-tracefrom") && i + 1 < argc)
@@ -199,6 +205,16 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    if (wav_path)
+    {
+        static const uint8_t hdr[44] = { 0 };
+        if (!(wav = fopen(wav_path, "wb")))
+        {
+            perror(wav_path);
+            return 2;
+        }
+        fwrite(hdr, 1, sizeof hdr, wav);     /* filled in at the end */
+    }
     if (trace_path && !(s_trace = fopen(trace_path, "w")))
     {
         perror(trace_path);
@@ -234,6 +250,14 @@ int main(int argc, char **argv)
         studio2_machine_run_frame(&m);
         if (c)
             studio2_cart_frame(c);
+        if (wav)
+            for (int i = 0; i < m.out_frames; i++)
+            {
+                const int16_t v = (int16_t)(m.out[2 * i] * 32767.0f);
+                fputc(v & 0xff, wav);
+                fputc((v >> 8) & 0xff, wav);
+                wav_samples++;
+            }
         m.out_frames = 0;
         if (hash)
             printf("%05d %08x\n", f, crc32_fb(m.fb));
@@ -249,6 +273,27 @@ int main(int argc, char **argv)
     }
     if (dump)
         fclose(dump);
+    if (wav)
+    {
+        /* RIFF/WAVE, PCM, mono, 48000 Hz, 16-bit */
+        uint8_t h[44];
+        const uint32_t data = wav_samples * 2, rate = STUDIO2_AUDIO_RATE, bps = rate * 2;
+        memcpy(h, "RIFF", 4);
+        h[4] = (uint8_t)(data + 36); h[5] = (uint8_t)((data + 36) >> 8);
+        h[6] = (uint8_t)((data + 36) >> 16); h[7] = (uint8_t)((data + 36) >> 24);
+        memcpy(h + 8, "WAVEfmt ", 8);
+        h[16] = 16; h[17] = h[18] = h[19] = 0;
+        h[20] = 1; h[21] = 0; h[22] = 1; h[23] = 0;
+        h[24] = (uint8_t)rate; h[25] = (uint8_t)(rate >> 8); h[26] = (uint8_t)(rate >> 16); h[27] = 0;
+        h[28] = (uint8_t)bps; h[29] = (uint8_t)(bps >> 8); h[30] = (uint8_t)(bps >> 16); h[31] = 0;
+        h[32] = 2; h[33] = 0; h[34] = 16; h[35] = 0;
+        memcpy(h + 36, "data", 4);
+        h[40] = (uint8_t)data; h[41] = (uint8_t)(data >> 8); h[42] = (uint8_t)(data >> 16);
+        h[43] = (uint8_t)(data >> 24);
+        fseek(wav, 0, SEEK_SET);
+        fwrite(h, 1, sizeof h, wav);
+        fclose(wav);
+    }
     if (s_trace)
         fclose(s_trace);
     if (c)
