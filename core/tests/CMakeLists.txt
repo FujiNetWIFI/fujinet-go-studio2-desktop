@@ -75,6 +75,13 @@ set_tests_properties(boot_smoke PROPERTIES TIMEOUT 60)
 studio2_test(stub_test stub_test.c)
 add_test(NAME stub_boot COMMAND stub_test)
 
+# The cartridge device and its transport against a stand-in FujiNet on
+# loopback: a MOUNT_IMAGE with a pushed image, the staging, BOOTLOCK and the
+# swap, and the trace tap held to the bytes on the wire. POSIX only (77).
+studio2_test(cart_test cart_test.c)
+add_test(NAME cart COMMAND cart_test)
+set_tests_properties(cart PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+
 # The debugger's FujiNet trace on byte streams built in the test: both
 # directions, split frames, a send dropping a cut-short reply, repeats and
 # repeated exchanges counted as one, the ring's limit and Clear.
