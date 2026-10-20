@@ -1,0 +1,75 @@
+fujinet-go-studio2-desktop -- milestone log
+===========================================
+
+The plan is the family's (see fujinet-go-adam-desktop/PORTING.md): one C API
+in core/, four native frontends, FujiNet in-process, one shared settings
+store, a native debugger everywhere, no panels visible at startup,
+clone-and-build CI. The core is MAME's RCA Studio II transposed to C, the
+astrocade and SMS siblings' way; the session, debugger and frontends are the
+SMS sibling's. Plan: ~/.claude/plans/build-fujinet-go-desktop-swirling-rabbit.md.
+Nothing below is marked done on "it compiles".
+
+M0  scaffold                                                          [x]
+  [x] root CMakeLists (VERSION 0.1.0, FRONTEND switch, WITH_STUDIO2_ROMS OFF,
+      no_embedded_roms registration, icon loop, CPack DEB/RPM/TGZ)
+  [x] cmake/Dependencies.cmake pins fujinet-firmware master (8fa1727b2, #2083);
+      cmake/StageFujiProto.cmake stages pico/studio2 + pico/common
+  [x] tools/fujinet: BoIP 11518, web UI 11519; patch 0001 (default hosts);
+      the post-#1960 transforms (-Werror off when embedded, pyyaml/jinja2
+      pip fallback); every heredoc anchor audited against the pin
+
+M1  CPU                                                               [x]
+  [x] cpu1802.c: MAME's cosmac.cpp state machine, CDP1802 subset
+  [x] dasm1802.c: MAME's cosdasm; dasm test against MAME's own output for
+      all 256 opcodes (dasm_golden.h, from MAME's debugger)
+
+M2  machine                                                           [x]
+  [x] cdp1861.c: MAME's three timers as absolute clocks, time_until_pos
+      transposed, flat 112-pixel bitmap rows
+  [x] machine.c: memory/I-O maps, keypads on EF3/EF4 via the OUT 2 latch,
+      INP 1, Q -> 300 Hz beeper, CLEAR (resets the 1861 on the press)
+  [x] tools/ab/mame_ab.py: BIOS alone with keys, 8 carts (DIRECT, against
+      MAME's FujiNet device), CONFIG: every frame pixel-identical; Lua keys
+      land two frames late in MAME (--key-shift -2)
+  [x] power-on pulses CLEAR (IE=1) unlike MAME (IE=0); --mame-power-on for A/B
+
+M3  cartridge                                                         [x]
+  [x] fujinet_cart.c from studio2_fujinet.cpp; worker thread, poke queue,
+      FN_R_LINK, reconnecting wait_link_ms, busy status
+  [x] fujitcp_host.c (the SMS twin; master's fujitcp.c now has abort too)
+  [x] stub.asm/stub.c: the no-BIOS stand-in; parks on a game, the machine
+      blanks the picture and the session asks for the BIOS
+  [x] tests: stub_boot, cart (loopback FujiNet: push, stage, arm, swap, the
+      trace tap byte-for-byte), no_sdl_link
+
+M4  session                                                           [x]
+  [x] studio2session.h: keypads + CLEAR targets, Import BIOS (2K / 1K / the
+      four ROMs), use_bios, games refused with no BIOS, needs_bios
+  [x] tests: session, bindings, media, gamepad, gamepad_map, boot_smoke,
+      fujibus_smoke, config_boot (an app and a game booted from the SD
+      host), netboot + netboot_sync (fujitest, fujiboot)
+
+M5  debugger engine                                                   [x]
+  [x] studio2debug.h: 1802 registers, SEP/SCRT step over/out, CDP1861 state
+      and views, I/O, cart page map and text engine, AS symbol formats,
+      big-endian {addr}
+  [x] tests: debug, fujitrace
+
+M6  GNOME                                                             [ ]
+M7  KDE                                                               [ ]
+M8  Windows                                                           [ ]
+M9  macOS (CI only: no Apple toolchain here)                          [ ]
+
+M10 packaging + CI                                                    [~]
+  [x] icons: the family mark, inverted, on #C8B58C
+  [x] flatpak manifests pinned to master (type: git); NSIS installer
+  [ ] screenshots (CONFIG, the debugger, the keypad)
+  [ ] CI green on every workflow
+
+M11 family audit                                                      [ ]
+M12 publish (repo, v0.1.0)                                            [ ]
+
+Not yet done / known differences
+  - macOS: written to the family's AppKit pattern, CI-verified only.
+  - No hardware exists for the cartridge (the firmware README's open
+    questions); everything here is held to MAME.
