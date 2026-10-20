@@ -82,6 +82,10 @@ function(studio2_session_test name)
   endif()
 endfunction()
 
+# The whole app headless, like a user: a session with the in-process
+# FujiNet, a script of presses and waits, screenshots. Built, not registered.
+studio2_session_test(studio2_drive studio2_drive.c)
+
 # The frontend contract, against a real temporary XDG tree: settings persist,
 # paths resolve, CONFIG boots and paints on the stand-in, input reaches the
 # machine, a FujiNet app opens, CLEAR restarts it, Reset to CONFIG ejects it,
