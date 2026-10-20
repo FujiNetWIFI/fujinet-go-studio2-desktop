@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>online.fujinet.go.studio2.kde</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>FujiNet Go Studio II</name>
+  <summary>RCA Studio II with built-in FujiNet</summary>
+  <description>
+    <p>
+      A self-contained RCA Studio II with a FujiNet built in: browse a
+      network host from the console with the CONFIG client, boot cartridges
+      over the network, and let a FujiNet app keep talking to the network
+      once it is running, all in one application.
+    </p>
+    <p>
+      The machine is MAME's RCA Studio II, its RCA CDP1802 COSMAC
+      processor and CDP1861 video chip transposed to C, with the FujiNet
+      Studio II cartridge always in the slot, serving the cartridge
+      firmware's own protocol: CONFIG is the cartridge's resident image, a
+      game booted over the network runs from the cartridge, and a local .st2
+      cartridge file can be opened in place of CONFIG. Import Cartridge to
+      SD puts a cartridge on FujiNet's SD folder, to boot it from CONFIG.
+    </p>
+    <p>
+      Both ten-key keypads are on screen and remappable, gamepads are picked
+      up as they are plugged in, and a native debugger is a key press away:
+      a command prompt, the 1802's registers and the console RAM, a
+      disassembly with breakpoints, the CDP1861's raster, the beeper and the
+      keypads as the console sees them, and the FujiNet cartridge.
+    </p>
+    <p>
+      Nothing copyrighted is included. CONFIG and the FujiNet apps boot on
+      the application's own stand-in for the BIOS; the console's games are
+      written in the BIOS's byte-code and need a BIOS of your own, imported
+      from the application.
+    </p>
+  </description>
+  <launchable type="desktop-id">online.fujinet.go.studio2.kde.desktop</launchable>
+  <url type="homepage">https://fujinet.online/</url>
+  <url type="bugtracker">https://github.com/FujiNetWIFI/fujinet-go-studio2-desktop/issues</url>
+  <url type="vcs-browser">https://github.com/FujiNetWIFI/fujinet-go-studio2-desktop</url>
+  <developer id="online.fujinet">
+    <name>Thomas Cherryhomes</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The FujiNet CONFIG client running on the Studio II</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/1_running_config.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The built-in debugger</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/2_debugger.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Both keypads on screen</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/3_keypad.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
+         it cannot disagree with the tree; past releases are literal. The
+         release job checks that this first entry is still a template. -->
+    <release version="@PROJECT_VERSION@" date="2026-10-20">
+      <description>
+        <p>
+          First release: the RCA Studio II transposed from MAME with the
+          FujiNet Studio II cartridge and an in-process FujiNet; CONFIG and
+          FujiNet apps boot without a BIOS, and games run on a BIOS you
+          import. Native GNOME, KDE, macOS and Windows frontends, both
+          keypads on screen, hotplugged gamepads, CLEAR and Reset to
+          CONFIG, and a native debugger with a FujiNet tab showing every
+          FujiBus packet between the Studio II and FujiNet.
+        </p>
+      </description>
+    </release>
+  </releases>
+</component>
