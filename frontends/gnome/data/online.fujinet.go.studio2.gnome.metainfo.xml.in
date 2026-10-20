@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>online.fujinet.go.studio2.gnome</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>FujiNet Go Studio II</name>
+  <summary>RCA Studio II with built-in FujiNet</summary>
+  <description>
+    <p>
+      A self-contained RCA Studio II, the 1977 COSMAC 1802 console, with a
+      FujiNet built in: browse a network host from the console, boot games
+      and programs over the network, and let a FujiNet program keep talking
+      to the network, all in one application.
+    </p>
+    <p>
+      FujiNet's CONFIG program is built in and starts at power-on, exactly as
+      on the FujiNet Studio II cartridge. Local .st2 and .bin cartridge images
+      can be opened in its place, or imported to FujiNet's SD folder with
+      Import Cartridge to SD and booted from CONFIG. CLEAR restarts whatever
+      the cartridge is serving, and Reset to CONFIG ejects the cartridge and
+      brings CONFIG back.
+    </p>
+    <p>
+      The emulator is MAME's RCA Studio II, with its CDP1802 processor and
+      CDP1861 video chip, transposed to C, with the FujiNet cartridge running
+      the real cartridge firmware's own protocol and page-mapping sources, so
+      it behaves as the hardware does.
+    </p>
+    <p>
+      Both ten-key keypads are on the keyboard and on screen, gamepads are
+      picked up as they are plugged in and out, and every key can be
+      remapped to a key or a gamepad button. A native debugger has a command
+      prompt, the 1802's registers and the console RAM, disassembly with
+      breakpoints, the 1861's raster, the keypads and I/O ports, and the
+      FujiNet cartridge with its page map and text screen.
+    </p>
+    <p>
+      Nothing copyrighted is included. CONFIG and FujiNet programs run on the
+      application's own stand-in for the BIOS; Studio II games are written in
+      the BIOS's own byte-code, so they need your own copy of the RCA BIOS,
+      added with Import BIOS.
+    </p>
+  </description>
+  <launchable type="desktop-id">online.fujinet.go.studio2.gnome.desktop</launchable>
+  <url type="homepage">https://fujinet.online/</url>
+  <url type="bugtracker">https://github.com/FujiNetWIFI/fujinet-go-studio2-desktop/issues</url>
+  <url type="vcs-browser">https://github.com/FujiNetWIFI/fujinet-go-studio2-desktop</url>
+  <developer id="online.fujinet">
+    <name>Thomas Cherryhomes</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The FujiNet CONFIG client running on the console</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/1_running_config.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The built-in debugger</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/2_debugger.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Both keypads on screen</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/main/data/screenshots/3_keypad.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
+         it cannot disagree with the tree; past releases are literal. The
+         release job checks that this first entry is still a template. -->
+    <release version="@PROJECT_VERSION@" date="2026-10-20">
+      <description>
+        <p>
+          First release: the RCA Studio II transposed from MAME with the
+          FujiNet Studio II cartridge and an in-process FujiNet; native
+          GNOME, KDE, macOS and Windows frontends; both keypads on screen,
+          hotplugged gamepads, an optional BIOS import for games, CLEAR and
+          Reset to CONFIG, and a native debugger with a FujiNet tab showing
+          every FujiBus packet.
+        </p>
+      </description>
+    </release>
+  </releases>
+</component>
