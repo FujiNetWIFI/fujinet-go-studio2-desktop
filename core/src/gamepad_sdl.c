@@ -249,7 +249,7 @@ static void open_pad(gamepad_state *g, SDL_JoystickID id)
                 char msg[128];
                 int port = effective_port_locked(g, g->npads - 1);
                 if (port >= 0)
-                    snprintf(msg, sizeof msg, "Connected: %s (player %d)", slot->name, port + 1);
+                    snprintf(msg, sizeof msg, "Connected: %s (keypad %c)", slot->name, 'A' + port);
                 else
                     snprintf(msg, sizeof msg, "Connected: %s", slot->name);
                 session_gamepad_event(g->session, msg);
