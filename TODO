@@ -59,7 +59,17 @@ M5  debugger engine                                                   [x]
       big-endian {addr}
   [x] tests: debug, fujitrace
 
-M6  GNOME                                                             [ ]
+M6  GNOME                                                             [x]
+  [x] GTK4/libadwaita port of the SMS frontend: Console menu, needs-BIOS
+      alert (Import BIOS retries the cartridge), Keypad window (fixed-size
+      floating), Preferences' BIOS line, the debugger's 8 tabs
+  [x] fixed from SMS: on_open's active-window cast (crash on a second
+      launch with a file while the debugger had focus); the 1069 px
+      debugger (disassembly scroll policy)
+  [x] seen under Hyprland on a headless output: CONFIG live, the menu,
+      keypad held (virtual pad) and Map, Preferences, the needs-BIOS
+      alert, a game after import, every debugger tab
+  [ ] not driven: register/RAM/breakpoint entry, Preferences close
 M7  KDE                                                               [x]
   [x] Qt6 port of the SMS frontend: menus, needs-BIOS alert, Keypad window
       (fixed-size floating), Preferences' BIOS line, the debugger's 8 tabs
@@ -68,7 +78,12 @@ M7  KDE                                                               [x]
       debugger tab, the needs-BIOS alert, a game after import
   [ ] not seen: Map mode, menu accelerators, About (no click dispatcher;
       Hyprland's synthetic keys lose Ctrl for Qt)
-M8  Windows                                                           [ ]
+M8  Windows                                                           [x]
+  [x] Win32/GDI port of the SMS frontend; Left Alt (keypad A's 0) as a
+      bound system key, Alt+F4/mnemonics stay Windows'
+  [x] cross-built (mingw-w64), every core test .exe passes under Wine;
+      every window and debugger tab seen under Wine
+  [ ] not driven: file dialogs, drag-and-drop
 M9  macOS (CI only: no Apple toolchain here)                          [~]
   [x] AppKit port of the SMS frontend; every API name and arity checked
       against the headers by script
@@ -77,10 +92,14 @@ M9  macOS (CI only: no Apple toolchain here)                          [~]
 M10 packaging + CI                                                    [~]
   [x] icons: the family mark, inverted, on #C8B58C
   [x] flatpak manifests pinned to master (type: git); NSIS installer
-  [ ] screenshots (CONFIG, the debugger, the keypad)
+  [x] screenshots (CONFIG live, the debugger's FujiNet tab, the keypad)
+  [x] local: both flatpak manifests build and bundle; CPack DEB and TGZ
+      (KDE, release-like with libfujinet; no rpmbuild here); no BIOS
+      bytes in any binary (no_embedded_roms against a local BIOS, with a
+      negative control)
   [ ] CI green on every workflow
 
-M11 family audit                                                      [~]
+M11 family audit                                                      [x]
   core and tools against the SMS sibling (names normalised):
   [x] cart_seam ported (Studio II seam: pages, peeks, hand-over, CLEAR)
   [x] sms_drive -> studio2_drive (whole app headless, scripted)
@@ -95,7 +114,8 @@ M11 family audit                                                      [~]
   - patch 0002 (.SMS as ROM media): master already maps .ST2
   - the firmware's fujitest/fujiboot.trace replays: pico/studio2's own
     host_test/test_cycles replays them against the same staged sources
-  [ ] frontends against SMS's, once GNOME and Windows land
+  [x] frontends: every SMS file has its counterpart (controllers ->
+      keypad); Pause dropped (the Studio II has none)
 M12 publish (repo, v0.1.0)                                            [ ]
 
 Not yet done / known differences
