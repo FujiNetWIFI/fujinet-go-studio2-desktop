@@ -1,0 +1,697 @@
+/*
+ * session.c -- the frontend contract (core/include/studio2session.h) over the
+ * RCA Studio II host (core/studio2/host.h).
+ *
+ * The C modules beside it (settings, paths, media, roms, audio, gamepads,
+ * bindings) share the session struct through session_internal.h; this file
+ * owns the lifecycle, the power cycles, the cartridges, the input routing
+ * and the cartridge status. Ported from the SMS sibling's session.c (itself
+ * the NES sibling's session.cpp, minus MesenCE).
+ *
+ * Copyright (C) 2026 Thomas Cherryhomes
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "session_internal.h"
+#include "bindings.h"
+#include "studio2debug.h"
+#include "host.h"
+#include "fuji_mailbox.h"
+#include "s2map.h"
+
+/* The largest image the cartridge plans (a 256-byte ST2 header and 64
+ * blocks), with room to say "too big" rather than truncate. */
+#define CART_MAX (S2MAP_IMAGE_MAX + 1u)
+
+/* ---- helpers shared with the C modules ----------------------------------- */
+
+void session_set_error(struct studio2session *s, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(s->last_error, sizeof s->last_error, fmt, ap);
+    va_end(ap);
+}
+
+void session_gamepad_event(struct studio2session *s, const char *text)
+{
+    pthread_mutex_lock(&s->pad_event_mtx);
+    snprintf(s->pad_event, sizeof s->pad_event, "%s", text ? text : "");
+    pthread_mutex_unlock(&s->pad_event_mtx);
+}
+
+int studio2session_gamepad_last_event(studio2session *s, char *dst, int dstsz)
+{
+    int n;
+    if (!dst || dstsz <= 0)
+        return 0;
+    pthread_mutex_lock(&s->pad_event_mtx);
+    n = snprintf(dst, (size_t)dstsz, "%s", s->pad_event);
+    pthread_mutex_unlock(&s->pad_event_mtx);
+    return n;
+}
+
+#ifdef STUDIO2_GAMEPAD_STUB
+int gamepad_start(struct studio2session *s) { session_set_error(s, "gamepad support not built"); return -1; }
+void gamepad_stop(struct studio2session *s) { (void)s; }
+int studio2session_gamepad_count(studio2session *s) { (void)s; return 0; }
+int studio2session_gamepad_name(studio2session *s, int i, char *d, int n) { (void)s; (void)i; if (d && n > 0) d[0] = 0; return 0; }
+void studio2session_gamepad_assign(studio2session *s, int i, int p) { (void)s; (void)i; (void)p; }
+int studio2session_gamepad_assignment(studio2session *s, int i) { (void)s; (void)i; return -1; }
+int studio2session_gamepad_effective_port(studio2session *s, int i) { (void)s; (void)i; return -1; }
+unsigned studio2session_gamepad_generation(studio2session *s) { (void)s; return 0; }
+void studio2session_gamepad_capture_begin(studio2session *s) { (void)s; }
+void studio2session_gamepad_capture_cancel(studio2session *s) { (void)s; }
+int studio2session_gamepad_capture_poll(studio2session *s, int *b) { (void)s; (void)b; return 0; }
+#endif
+
+/* ---- lifecycle ------------------------------------------------------------- */
+
+studio2session *studio2session_new(const studio2session_paths *paths)
+{
+    struct studio2session *s;
+
+    paths_capture_launch_dir();
+    s = calloc(1, sizeof *s);
+    if (!s)
+        return NULL;
+
+    pthread_mutex_init(&s->settings_mtx, NULL);
+    pthread_mutex_init(&s->sysact_mtx, NULL);
+    pthread_mutex_init(&s->pad_event_mtx, NULL);
+
+    if (paths_init(s, paths ? paths->config_dir : NULL,
+                   paths ? paths->data_dir : NULL) != 0) {
+        studio2session_free(s);
+        return NULL;
+    }
+    settings_init(s);
+    bindings_init(s);
+    roms_provision_embedded(s);
+
+    if (paths && paths->fujinet_lib) {
+        snprintf(s->fujinet_lib, sizeof s->fujinet_lib, "%s", paths->fujinet_lib);
+        s->fujinet_disabled = !paths->fujinet_lib[0];
+    }
+    if (paths && paths->fujinet_runtime_src)
+        snprintf(s->fujinet_runtime_src, sizeof s->fujinet_runtime_src, "%s",
+                 paths->fujinet_runtime_src);
+    return s;
+}
+
+void studio2session_free(studio2session *s)
+{
+    if (!s)
+        return;
+    studio2session_stop(s);
+    studio2session_settings_flush(s);
+    settings_free_all(s);
+    studio2debug_destroy(s);
+    pthread_mutex_destroy(&s->settings_mtx);
+    pthread_mutex_destroy(&s->sysact_mtx);
+    pthread_mutex_destroy(&s->pad_event_mtx);
+    free(s);
+}
+
+void studio2session_default_opts(studio2session *s, studio2session_start_opts *opts)
+{
+    memset(opts, 0, sizeof *opts);
+    opts->use_bios = studio2session_get_int(s, "use_bios", 1);
+    opts->analog_joystick = studio2session_get_int(s, "analog_joystick", 1);
+    opts->enable_fujinet = studio2session_get_int(s, "enable_fujinet", 1);
+    opts->enable_audio = studio2session_get_int(s, "enable_audio", 1);
+    opts->enable_gamepad = studio2session_get_int(s, "enable_gamepad", 1);
+    opts->cart_path = studio2session_get_str(s, "cart", NULL);
+    if (opts->cart_path && !opts->cart_path[0])
+        opts->cart_path = NULL;
+}
+
+static uint8_t *read_cart(const char *path, uint32_t *len, char *why, int whysz)
+{
+    FILE *f = fopen(path, "rb");
+    uint8_t *buf;
+    size_t got;
+
+    if (!f) {
+        snprintf(why, (size_t)whysz, "cannot open %s", path);
+        return NULL;
+    }
+    buf = malloc(CART_MAX + 1);
+    if (!buf) {
+        fclose(f);
+        snprintf(why, (size_t)whysz, "out of memory");
+        return NULL;
+    }
+    got = fread(buf, 1, CART_MAX + 1, f);
+    fclose(f);
+    if (got == 0) {
+        free(buf);
+        snprintf(why, (size_t)whysz, "%s is empty", path);
+        return NULL;
+    }
+    if (got >= CART_MAX) {
+        free(buf);
+        snprintf(why, (size_t)whysz,
+                 "the image is larger than the cartridge can serve (16,640 bytes)");
+        return NULL;
+    }
+    *len = (uint32_t)got;
+    return buf;
+}
+
+/* Bring the machine up with s->opts and the given image (NULL: CONFIG). */
+static int host_up(struct studio2session *s, const char *cart_path)
+{
+    studio2_host_opts_t ho;
+    uint8_t *cart = NULL, *bios = NULL;
+    uint32_t cart_len = 0, bios_len = 0;
+    char boip[32];
+    char why[256];
+    int rc;
+
+    memset(&ho, 0, sizeof ho);
+    if (cart_path && *cart_path) {
+        cart = read_cart(cart_path, &cart_len, why, sizeof why);
+        if (!cart) {
+            session_set_error(s, "%s", why);
+            return -1;
+        }
+    }
+    if (s->opts.use_bios)
+        bios = roms_load_bios(s, &bios_len);
+
+    /* The cartridge dials FujiNet's BoIP port -- the in-process runtime's,
+     * or a standalone fujinet-pc's when the runtime is switched off. A
+     * session whose FujiNet is disabled outright (fujinet_lib "", the tests)
+     * dials a closed port, so it can never pick up someone else's FujiNet. */
+    if (s->fujinet_disabled)
+        snprintf(boip, sizeof boip, "127.0.0.1:1");
+    else
+        snprintf(boip, sizeof boip, "127.0.0.1:%d", STUDIO2SESSION_BOIP_PORT);
+    ho.bios = bios;
+    ho.bios_size = bios_len;
+    ho.cart = cart;
+    ho.cart_size = cart_len;
+    ho.boip_hostport = boip;
+    ho.cart_sync = getenv("STUDIO2_CART_SYNC") != NULL;
+    ho.mame_power_on = getenv("STUDIO2_MAME_POWER_ON") != NULL;
+
+    rc = studio2_host_start(&ho);
+    if (rc != 0)
+        session_set_error(s, "%s", studio2_host_last_error());
+    free(cart);
+    free(bios);
+    return rc;
+}
+
+/* A power cycle: the machine and the cartridge come up fresh; FujiNet stays
+ * up. `cart_path` NULL boots CONFIG. */
+static int power_cycle(struct studio2session *s, const char *cart_path)
+{
+    int rc;
+
+    /* the console powers up with the BIOS its settings name now: an Import
+     * BIOS or a Preferences change takes effect here */
+    s->opts.use_bios = studio2session_get_int(s, "use_bios", 1);
+
+    studio2debug_before_power_cycle(s);
+    studio2_host_stop();
+    rc = host_up(s, cart_path);
+    if (rc != 0 && cart_path) {
+        /* whatever was running is gone: put CONFIG back */
+        char err[256];
+        snprintf(err, sizeof err, "%s", s->last_error);
+        host_up(s, NULL);
+        snprintf(s->last_error, sizeof s->last_error, "%s", err);
+    }
+    studio2debug_after_power_cycle(s);
+    return rc;
+}
+
+static void set_cart(struct studio2session *s, const char *path)
+{
+    if (path && *path)
+        snprintf(s->cart_path, sizeof s->cart_path, "%s", path);
+    else
+        s->cart_path[0] = '\0';
+    s->opts.cart_path = s->cart_path[0] ? s->cart_path : NULL;
+    studio2session_set_str(s, "cart", s->cart_path);
+}
+
+static void adopt_opts(struct studio2session *s, const studio2session_start_opts *opts)
+{
+    s->opts = *opts;
+    if (opts->cart_path) {
+        char abs[STUDIO2_PATH_MAX];
+        snprintf(s->cart_path, sizeof s->cart_path, "%s",
+                 paths_resolve(opts->cart_path, abs, sizeof abs));
+    } else
+        s->cart_path[0] = '\0';
+    s->opts.cart_path = s->cart_path[0] ? s->cart_path : NULL;
+}
+
+int studio2session_start(studio2session *s, const studio2session_start_opts *opts)
+{
+    studio2session_start_opts local;
+
+    if (s->running)
+        return 0;
+    s->last_error[0] = '\0';
+
+    if (!opts) {
+        studio2session_default_opts(s, &local);
+        opts = &local;
+    }
+    adopt_opts(s, opts);
+    memset(s->pad_src, 0, sizeof s->pad_src);
+    memset(s->sw_src, 0, sizeof s->sw_src);
+    studio2_host_release_all();
+    studio2debug_trace_fujinet(s);
+
+    /* FujiNet FIRST: it listens and the cartridge dials in, so the listener
+     * has to exist before the machine's first transaction or the CONFIG
+     * client boots reporting no link. Failing to start is NOT fatal (the
+     * cartridge also redials when a transaction finds the link down). */
+    if (s->opts.enable_fujinet && !s->fujinet_disabled) {
+        if (fujinet_start(s) == 0)
+            fujinet_wait_for_boip(s, 3000);
+    }
+
+    /* A remembered cartridge that no longer loads (moved, or an image the
+     * cartridge cannot map) must not leave the app unbootable: fall back to
+     * CONFIG and say why. */
+    if (host_up(s, s->opts.cart_path) != 0) {
+        if (s->opts.cart_path) {
+            fprintf(stderr, "studio2: %s: %s; booting CONFIG\n", s->cart_path, s->last_error);
+            set_cart(s, NULL);
+            if (host_up(s, NULL) != 0) {
+                fujinet_stop(s);
+                return -1;
+            }
+        } else {
+            fujinet_stop(s);
+            return -1;
+        }
+    }
+
+    s->running = 1;
+    studio2debug_after_power_cycle(s);
+
+    if (s->opts.enable_gamepad && gamepad_start(s) != 0) {
+        fprintf(stderr, "studio2: gamepads unavailable (%s)\n", s->last_error);
+        s->last_error[0] = '\0';
+    }
+    if (s->opts.enable_audio && audio_start(s) != 0) {
+        fprintf(stderr, "studio2: audio unavailable (%s); continuing silent\n", s->last_error);
+        s->last_error[0] = '\0';
+    }
+    return 0;
+}
+
+void studio2session_stop(studio2session *s)
+{
+    if (!s->running)
+        return;
+    audio_stop(s);
+    gamepad_stop(s);
+    studio2debug_before_power_cycle(s);
+    studio2_host_stop();
+    fujinet_stop(s);
+    s->running = 0;
+}
+
+int studio2session_is_running(const studio2session *s)
+{
+    return s->running;
+}
+
+const char *studio2session_last_error(const studio2session *s)
+{
+    return s->last_error;
+}
+
+int studio2session_restart(studio2session *s)
+{
+    studio2session_start_opts opts;
+
+    studio2session_settings_flush(s);
+    studio2session_default_opts(s, &opts);
+    if (!s->running)
+        return studio2session_start(s, &opts);
+
+    /* FujiNet or the device toggles change what runs beside the machine:
+     * a full restart. Anything else is a machine option: a power cycle. */
+    if (!!opts.enable_fujinet != !!s->opts.enable_fujinet ||
+        !!opts.enable_audio != !!s->opts.enable_audio ||
+        !!opts.enable_gamepad != !!s->opts.enable_gamepad) {
+        studio2session_stop(s);
+        return studio2session_start(s, &opts);
+    }
+    adopt_opts(s, &opts);
+    return power_cycle(s, s->opts.cart_path);
+}
+
+/* ---- cartridges ------------------------------------------------------------ */
+
+/* Read and plan an image: 1 if the cartridge can serve it (*claims set when
+ * it is a FujiNet app), else 0 and why. */
+static int check_image(const char *path, int *claims, char *why, int whysz)
+{
+    uint8_t *img;
+    uint32_t len = 0;
+    char err[256];
+    char abs[STUDIO2_PATH_MAX];
+    bool app = false;
+    int ok;
+
+    if (why && whysz > 0)
+        why[0] = '\0';
+    if (claims)
+        *claims = 0;
+    if (!path || !*path)
+        return 0;
+    path = paths_resolve(path, abs, sizeof abs);
+    img = read_cart(path, &len, err, sizeof err);
+    if (!img) {
+        if (why && whysz > 0)
+            snprintf(why, (size_t)whysz, "%s", err);
+        return 0;
+    }
+    ok = studio2_cart_check_image(img, len, &app, why, whysz);
+    free(img);
+    if (claims)
+        *claims = app;
+    return ok;
+}
+
+int studio2session_check_cart(const char *path, char *why, int whysz)
+{
+    return check_image(path, NULL, why, whysz);
+}
+
+int studio2session_cart_is_app(const char *path)
+{
+    int app = 0;
+    return check_image(path, &app, NULL, 0) && app;
+}
+
+int studio2session_load_cart(studio2session *s, const char *path)
+{
+    char why[256];
+    char abs[STUDIO2_PATH_MAX];
+    int app = 0;
+
+    if (!s->running || !path || !*path)
+        return -1;
+    path = paths_resolve(path, abs, sizeof abs);
+    if (!check_image(path, &app, why, sizeof why)) {
+        session_set_error(s, "%s", why);
+        return -1;
+    }
+    /* a game is BIOS byte-code: the stand-in cannot run it */
+    if (!app && !(studio2session_get_int(s, "use_bios", 1) && studio2session_have_bios(s))) {
+        session_set_error(s, "This cartridge needs the RCA Studio II BIOS. Use Import BIOS "
+                             "to add your own copy (the FujiNet apps and CONFIG run without it).");
+        return -1;
+    }
+    if (power_cycle(s, path) != 0) {
+        set_cart(s, NULL);
+        return -1;
+    }
+    set_cart(s, path);
+    return 0;
+}
+
+const char *studio2session_cart_path(const studio2session *s)
+{
+    return s->cart_path;
+}
+
+int studio2session_clear(studio2session *s)
+{
+    if (!s->running)
+        return -1;
+    studio2_host_clear_pulse();
+    return 0;
+}
+
+int studio2session_needs_bios(studio2session *s)
+{
+    return s->running && studio2_host_needs_bios();
+}
+
+int studio2session_reset_to_config(studio2session *s)
+{
+    if (!s->running)
+        return -1;
+    set_cart(s, NULL);
+    return power_cycle(s, NULL);
+}
+
+int studio2session_eject(studio2session *s)
+{
+    return studio2session_reset_to_config(s);
+}
+
+/* ---- video / audio --------------------------------------------------------- */
+
+int studio2session_copy_frame(studio2session *s, uint32_t *dst, uint64_t *serial_inout)
+{
+    if (!s->running)
+        return 0;
+    return studio2_host_frame_copy(dst, serial_inout);
+}
+
+int studio2session_refresh_rate(studio2session *s)
+{
+    (void)s;
+    return 60;
+}
+
+void studio2session_notify_vsync(studio2session *s, int64_t frame_time_ns)
+{
+    if (s->running)
+        studio2_host_notify_vsync(frame_time_ns);
+}
+
+int studio2session_render_audio(studio2session *s, float *out, int nframes)
+{
+    int got = 0;
+
+    if (nframes <= 0)
+        return 0;
+    if (s->running)
+        got = studio2_host_audio_copy(out, nframes);
+    if (got < nframes)
+        memset(out + 2 * got, 0, sizeof(float) * 2 * (size_t)(nframes - got));
+    {
+        const float gain = (float)studio2session_get_int(s, "volume", 100) / 100.0f;
+        if (gain < 0.999f)
+            for (int i = 0; i < 2 * got; i++)
+                out[i] *= gain;
+    }
+    return nframes;
+}
+
+void studio2session_set_volume(studio2session *s, int percent)
+{
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    studio2session_set_int(s, "volume", percent);
+}
+
+/* ---- input ----------------------------------------------------------------- */
+
+static void apply_pad(struct studio2session *s, int port)
+{
+    uint16_t mask = 0;
+    for (int a = 0; a < STUDIO2_ACT_PER_PORT; a++)
+        if (s->pad_src[port][a])
+            mask |= (uint16_t)(1u << a);
+    studio2_host_keypad_set(port, mask);
+}
+
+static void pad_src(struct studio2session *s, int port, int act, int down, uint8_t src)
+{
+    if (down)
+        s->pad_src[port][act] |= src;
+    else
+        s->pad_src[port][act] &= (uint8_t)~src;
+    apply_pad(s, port);
+}
+
+static void switch_src(struct studio2session *s, int sw, int down, uint8_t src)
+{
+    if (down)
+        s->sw_src[sw] |= src;
+    else
+        s->sw_src[sw] &= (uint8_t)~src;
+    if (sw == STUDIO2_SW_CLEAR)
+        studio2_host_clear_set(s->sw_src[sw] != 0);
+}
+
+void studio2session_press(studio2session *s, int target, int down)
+{
+    if (!s->running || target < 0 || target >= STUDIO2_TARGET_COUNT)
+        return;
+
+    if (target < 2 * STUDIO2_ACT_PER_PORT) {
+        pad_src(s, target / STUDIO2_ACT_PER_PORT, target % STUDIO2_ACT_PER_PORT, down, 1);
+        return;
+    }
+    target -= 2 * STUDIO2_ACT_PER_PORT;
+    if (target < STUDIO2_SW_COUNT) {
+        switch_src(s, target, down, 1);
+        return;
+    }
+    if (down)
+        studio2session_sysaction(s, target - STUDIO2_SW_COUNT);
+}
+
+void studio2session_sysaction(studio2session *s, int sysact)
+{
+    switch (sysact) {
+    case STUDIO2_SYSACT_RESET_CONFIG:
+        studio2session_reset_to_config(s);
+        break;
+    case STUDIO2_SYSACT_DEBUG_STOP:
+        if (s->running) {
+            studio2debug *d = studio2debug_get(s);
+            studio2debug_attach(d);
+            studio2debug_stop(d);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void studio2session_sysaction_post(studio2session *s, int sysact)
+{
+    if (sysact < 0 || sysact >= STUDIO2_SYSACT_COUNT)
+        return;
+    pthread_mutex_lock(&s->sysact_mtx);
+    s->sysact_pending |= 1u << sysact;
+    pthread_mutex_unlock(&s->sysact_mtx);
+}
+
+int studio2session_sysaction_take(studio2session *s, int *out)
+{
+    int found = 0;
+    pthread_mutex_lock(&s->sysact_mtx);
+    for (int i = 0; i < STUDIO2_SYSACT_COUNT; i++) {
+        if (s->sysact_pending & (1u << i)) {
+            s->sysact_pending &= ~(1u << i);
+            if (out)
+                *out = i;
+            found = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s->sysact_mtx);
+    return found;
+}
+
+unsigned studio2session_buttons_held(studio2session *s, int port)
+{
+    unsigned held = 0;
+    if (port < 0 || port > 1)
+        return 0;
+    for (int a = 0; a < STUDIO2_ACT_PER_PORT; a++)
+        if (s->pad_src[port][a])
+            held |= 1u << a;
+    return held;
+}
+
+int studio2session_switch_held(studio2session *s, int sw)
+{
+    if (sw < 0 || sw >= STUDIO2_SW_COUNT)
+        return 0;
+    return s->sw_src[sw] != 0;
+}
+
+/* The gamepad thread's entry point: the same routing as press, from the
+ * pad's own source bit, never touching the settings or the debugger. */
+void session_gamepad_apply(struct studio2session *s, int port, int act, int down)
+{
+    if (!s->running || port < 0 || port > 1 || act < 0 || act >= STUDIO2_ACT_PER_PORT)
+        return;
+    pad_src(s, port, act, down, 2);
+}
+
+void studio2session_set_analog(studio2session *s, int joystick)
+{
+    s->opts.analog_joystick = joystick ? 1 : 0;
+    studio2session_set_int(s, "analog_joystick", s->opts.analog_joystick);
+}
+
+/* ---- FujiNet --------------------------------------------------------------- */
+
+int studio2session_fujinet_running(const studio2session *s)
+{
+    return s->fujinet_running;
+}
+
+const char *studio2session_fujinet_webui_url(const studio2session *s)
+{
+    return s->webui_url;
+}
+
+int studio2session_cart_link_up(studio2session *s)
+{
+    studio2_cart_status_t st;
+    if (!s->running)
+        return -1;
+    studio2_host_cart_status(&st);
+    return st.link_up ? 1 : 0;
+}
+
+int studio2session_cart_status(studio2session *s, char *dst, int dstsz)
+{
+    studio2_cart_status_t st;
+
+    if (!dst || dstsz <= 0)
+        return 0;
+    dst[0] = '\0';
+    if (!s->running)
+        return snprintf(dst, (size_t)dstsz, "stopped");
+    studio2_host_cart_status(&st);
+    if (!st.powered)
+        return snprintf(dst, (size_t)dstsz, "starting");
+    if (st.boot_state == FN_BOOT_XFER)
+        return snprintf(dst, (size_t)dstsz, "receiving %d%%", st.boot_pct);
+    if (!st.mailbox_mode || (st.booted_game && st.mode == FN_MODE_GAME))
+        return snprintf(dst, (size_t)dstsz, "game running; mailbox closed");
+    if (st.link_up)
+        return snprintf(dst, (size_t)dstsz, st.busy ? "connected (busy)" : "connected");
+    return snprintf(dst, (size_t)dstsz, "link down");
+}
+
+int studio2session_cart_booted_game(studio2session *s)
+{
+    studio2_cart_status_t st;
+    if (!s->running)
+        return 0;
+    studio2_host_cart_status(&st);
+    return st.booted_game ? 1 : 0;
+}
+
+/* ---- paths ----------------------------------------------------------------- */
+
+const char *studio2session_config_path(const studio2session *s) { return s->config_dir; }
+const char *studio2session_data_path(const studio2session *s) { return s->data_dir; }
+const char *studio2session_carts_path(const studio2session *s) { return s->carts_dir; }
+const char *studio2session_sd_path(const studio2session *s) { return s->fujinet_sd; }
+
+/* ---- debugger -------------------------------------------------------------- */
+
+studio2debug *studio2session_debugger(studio2session *s)
+{
+    return studio2debug_get(s);
+}
