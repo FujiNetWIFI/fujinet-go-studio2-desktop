@@ -124,8 +124,9 @@ image on stock MAME's cart or (`--direct`) through MAME's FujiNet device,
 or CONFIG. It wants a studio2 MAME build carrying the firmware's FujiNet
 graft (`pico/studio2/emu/apply.sh`) in `$MAME` and your own BIOS
 (`--bios`); use `--mame-power-on`, since MAME's 1802 skips the power-on
-CLEAR reset the console does (`core/studio2/machine.c`).
-`tools/ab/abtrace.lua` and `studio2_headless -trace` give bus-read traces of
+CLEAR reset the console does (`core/studio2/machine.c`), and press Clear
+first, or MAME's BIOS never takes its interrupt. `--wav` compares the
+beeper too. `tools/ab/abtrace.lua` and `studio2_headless -trace` give bus-read traces of
 both sides with cycle stamps, for finding where two runs part.
 
 ### Cross-building Windows on Linux
@@ -189,14 +190,17 @@ Every key is remappable in the Keypad window.
 
 ## How this was verified
 
-- **The core against MAME** — `tools/ab/mame_ab.py`, with a local BIOS: the
-  console alone with scripted keys (the built-in games), and eight cart
-  images (*Spacewar*, *Tennis-Squash*, *Baseball*, *Speedway-Tag*,
-  *Blackjack*, and Paul Robson's *Combat*, *Hockey* and *Space Invaders*)
-  served through the FujiNet cart against MAME's FujiNet device: 700 of 700
-  frames pixel-identical each, keys included; CONFIG with the link down 400
-  of 400. The disassembler matches MAME's for all 256 opcodes
-  (`dasm_golden.h`, in the suite).
+- **The core against MAME** — `tools/ab/mame_ab.py`, with a local BIOS,
+  Clear pressed first and keys on both pads: the console alone (the
+  built-in games), and eight cart images (*Spacewar*, *Tennis-Squash*,
+  *Baseball*, *Speedway-Tag*, *Blackjack*, and Paul Robson's *Combat*,
+  *Hockey* and *Space Invaders*) served through the FujiNet cart against
+  MAME's FujiNet device: 1200 of 1200 frames pixel-identical each, and the
+  beeper sample for sample (every beep's start and end within two samples
+  of MAME's); CONFIG with the link down 400 of 400. Every bus read of the
+  tests' own BIOS and game, and of CONFIG on the stand-in, matches MAME's
+  trace (`mame_trace`, in the suite). The disassembler matches MAME's for
+  all 256 opcodes (`dasm_golden.h`).
 - **The core on Linux** — `ctest`: the core alone (`no_sdl_link`); the
   stand-in (`stub_boot`: CONFIG paints, a FujiNet app runs and takes its
   interrupt once a frame, keypad A reaches it, CLEAR restarts it, a game
