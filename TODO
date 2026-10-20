@@ -31,7 +31,10 @@ M2  machine                                                           [x]
   [x] tools/ab/mame_ab.py: BIOS alone with keys, 8 carts (DIRECT, against
       MAME's FujiNet device), CONFIG: every frame pixel-identical; Lua keys
       land two frames late in MAME (--key-shift -2)
-  [x] power-on pulses CLEAR (IE=1) unlike MAME (IE=0); --mame-power-on for A/B
+  [x] power-on pulses CLEAR (IE=1) unlike MAME (IE=0); --mame-power-on for A/B,
+      with Clear pressed first (MAME's BIOS never takes its interrupt
+      otherwise): 1200/1200 frames, 8 carts + the built-ins
+  [x] beeper: mame_ab.py --wav, every beep within two samples of MAME's
 
 M3  cartridge                                                         [x]
   [x] fujinet_cart.c from studio2_fujinet.cpp; worker thread, poke queue,
@@ -40,7 +43,8 @@ M3  cartridge                                                         [x]
   [x] stub.asm/stub.c: the no-BIOS stand-in; parks on a game, the machine
       blanks the picture and the session asks for the BIOS
   [x] tests: stub_boot, cart (loopback FujiNet: push, stage, arm, swap, the
-      trace tap byte-for-byte), no_sdl_link
+      trace tap byte-for-byte), cart_seam (pages, peeks, the qualified
+      read of $0000, CLEAR into an armed CONFIG), mame_trace, no_sdl_link
 
 M4  session                                                           [x]
   [x] studio2session.h: keypads + CLEAR targets, Import BIOS (2K / 1K / the
@@ -56,9 +60,19 @@ M5  debugger engine                                                   [x]
   [x] tests: debug, fujitrace
 
 M6  GNOME                                                             [ ]
-M7  KDE                                                               [ ]
+M7  KDE                                                               [x]
+  [x] Qt6 port of the SMS frontend: menus, needs-BIOS alert, Keypad window
+      (fixed-size floating), Preferences' BIOS line, the debugger's 8 tabs
+  [x] seen under Hyprland on a headless output: CONFIG with a live FujiNet,
+      keypad held keys, Preferences before/after Import BIOS, every
+      debugger tab, the needs-BIOS alert, a game after import
+  [ ] not seen: Map mode, menu accelerators, About (no click dispatcher;
+      Hyprland's synthetic keys lose Ctrl for Qt)
 M8  Windows                                                           [ ]
-M9  macOS (CI only: no Apple toolchain here)                          [ ]
+M9  macOS (CI only: no Apple toolchain here)                          [~]
+  [x] AppKit port of the SMS frontend; every API name and arity checked
+      against the headers by script
+  [ ] first build is CI's
 
 M10 packaging + CI                                                    [~]
   [x] icons: the family mark, inverted, on #C8B58C
@@ -66,7 +80,22 @@ M10 packaging + CI                                                    [~]
   [ ] screenshots (CONFIG, the debugger, the keypad)
   [ ] CI green on every workflow
 
-M11 family audit                                                      [ ]
+M11 family audit                                                      [~]
+  core and tools against the SMS sibling (names normalised):
+  [x] cart_seam ported (Studio II seam: pages, peeks, hand-over, CLEAR)
+  [x] sms_drive -> studio2_drive (whole app headless, scripted)
+  [x] audio_ab.py -> mame_ab.py --wav (one harness for frames and audio)
+  not adopted, deliberately:
+  - bios_synth: the Sega BIOS socket/paging/snoop; the Studio II has no
+    BIOS paging, and stub_boot runs a BIOS of the tests' own
+  - vdp_decode, vdp_timing, probe_golden + tools/ab/probes, make_goldens:
+    covered by mame_trace (every CPU and DMA read of the tests' own BIOS,
+    game and CONFIG, cycle-stamped, against MAME's trace) and dasm
+  - abshot.lua: abdump.lua dumps every frame instead of snapshots
+  - patch 0002 (.SMS as ROM media): master already maps .ST2
+  - the firmware's fujitest/fujiboot.trace replays: pico/studio2's own
+    host_test/test_cycles replays them against the same staged sources
+  [ ] frontends against SMS's, once GNOME and Windows land
 M12 publish (repo, v0.1.0)                                            [ ]
 
 Not yet done / known differences
