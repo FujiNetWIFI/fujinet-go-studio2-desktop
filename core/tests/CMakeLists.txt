@@ -51,6 +51,14 @@ studio2_test(cart_test cart_test.c)
 add_test(NAME cart COMMAND cart_test)
 set_tests_properties(cart PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
 
+# The seam between the console and the cartridge, with the suite's own
+# images and no FujiNet: a game's and an app's pages, peeks that fire
+# nothing, the hand-over only on a qualified read of $0000, and CLEAR
+# bringing an app that armed CONFIG back up in CONFIG.
+studio2_test(cart_seam_test cart_seam_test.c)
+add_test(NAME cart_seam COMMAND cart_seam_test)
+set_tests_properties(cart_seam PROPERTIES TIMEOUT 60)
+
 # The debugger's FujiNet trace on byte streams built in the test: both
 # directions, split frames, a send dropping a cut-short reply, repeats and
 # repeated exchanges counted as one, the ring's limit and Clear.

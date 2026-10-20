@@ -208,6 +208,9 @@ Every key is remappable in the Keypad window.
   the paced host (`boot_smoke`: 59.98 Hz measured); the cart and its
   transport against a loopback FujiNet (`cart`: a pushed image staged,
   armed and swapped in, the trace tap byte-for-byte with the wire); the
+  seam (`cart_seam`: a game's pages and an app's, peeks that fire nothing,
+  the hand-over only on a qualified read of `$0000`, CLEAR bringing an app
+  that armed CONFIG back up in CONFIG); the
   session; media and Import BIOS (identified by CRC with filler images whose
   CRC was steered to MAME's table — no RCA code involved); bindings;
   gamepads (an SDL virtual pad); the debugger contract. With the in-process
