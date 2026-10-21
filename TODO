@@ -84,12 +84,12 @@ M8  Windows                                                           [x]
   [x] cross-built (mingw-w64), every core test .exe passes under Wine;
       every window and debugger tab seen under Wine
   [ ] not driven: file dialogs, drag-and-drop
-M9  macOS (CI only: no Apple toolchain here)                          [~]
+M9  macOS (CI only: no Apple toolchain here)                          [x]
   [x] AppKit port of the SMS frontend; every API name and arity checked
       against the headers by script
-  [ ] first build is CI's
+  [x] builds and tests green on CI (arm64 and x86_64); never run here
 
-M10 packaging + CI                                                    [~]
+M10 packaging + CI                                                    [x]
   [x] icons: the family mark, inverted, on #C8B58C
   [x] flatpak manifests pinned to master (type: git); NSIS installer
   [x] screenshots (CONFIG live, the debugger's FujiNet tab, the keypad)
@@ -97,7 +97,8 @@ M10 packaging + CI                                                    [~]
       (KDE, release-like with libfujinet; no rpmbuild here); no BIOS
       bytes in any binary (no_embedded_roms against a local BIOS, with a
       negative control)
-  [ ] CI green on every workflow
+  [x] CI green on every workflow (macOS compiled first time; Windows
+      needed eec4b81: a FujiNet-off session no longer dials)
 
 M11 family audit                                                      [x]
   core and tools against the SMS sibling (names normalised):
@@ -116,7 +117,10 @@ M11 family audit                                                      [x]
     host_test/test_cycles replays them against the same staged sources
   [x] frontends: every SMS file has its counterpart (controllers ->
       keypad); Pause dropped (the Studio II has none)
-M12 publish (repo, v0.1.0)                                            [ ]
+M12 publish (repo, v0.1.0)                                            [x]
+  [x] FujiNetWIFI/fujinet-go-studio2-desktop created, main pushed
+  [x] v0.1.0 tagged (eec4b81), release.yml green, published 2026-10-20:
+      12 assets as SMS's; every shipped binary scanned for BIOS bytes
 
 Not yet done / known differences
   - macOS: written to the family's AppKit pattern, CI-verified only.
