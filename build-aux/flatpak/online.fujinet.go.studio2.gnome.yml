@@ -115,12 +115,15 @@ modules:
           # developer's own BIOS images beside it are copied in but never
           # embedded -- WITH_STUDIO2_ROMS is OFF above, which the build's
           # no_embedded_roms checks hold it to.)
-      # Pinned exactly as cmake/Dependencies.cmake (FUJINET_COMMIT, on
-      # master). studio2_provide_dependency() skips its own fetch once it
-      # finds build.sh (the SENTINEL) already here.
-      - type: git
-        url: https://github.com/FujiNetWIFI/fujinet-firmware.git
-        commit: 8fa1727b277c1e418fd7b44517c1a99fada8f427
+      # Pinned exactly as cmake/Dependencies.cmake (FUJINET_COMMIT, PR
+      # #2187's head). A git source can't take a commit on no branch, so this
+      # is GitHub's archive of it (the FujiNet version then reads 0000000);
+      # back to `type: git` on master once #2187 merges.
+      # studio2_provide_dependency() skips its own fetch once it finds
+      # build.sh (the SENTINEL) already here.
+      - type: archive
+        url: https://github.com/FujiNetWIFI/fujinet-firmware/archive/035f09604f221b8ba3d0b9897846ff73a7f2472d.tar.gz
+        sha256: 0e8aa22195f68fbfb6c225c53d197da4161631dfae1bde3e9d593dd1ecae2eff
         dest: third_party/fujinet-firmware
       # Same reasoning: the sandboxed build step has no network access, but
       # tools/fujinet/build-fujinet-desktop.sh needs mbedTLS 3.x and

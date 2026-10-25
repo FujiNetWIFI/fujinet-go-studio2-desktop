@@ -13,7 +13,11 @@
  *     went quiet (the console in CLEAR) -- never on any other read of
  *     $0000, and never on a peek;
  *   - CLEAR on the machine: an app that armed CONFIG and holds CLEAR comes
- *     back up in CONFIG.
+ *     back up in CONFIG;
+ *   - protocol 2: a bank select changes what $C400 serves at once, the
+ *     poke stream writes an image page the next read sees, COPY counts in
+ *     FN_R_COPYDONE, and a picture drawn by the text engine reaches the
+ *     raster at the next frame's start.
  *
  * Copyright (C) 2026 Thomas Cherryhomes
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -25,6 +29,7 @@
 #include "fuji_mailbox.h"
 #include "s2map.h"
 #include "s2_cart.h"
+#include "s2_text.h"
 #include "studio2_internal.h"
 #include "test_rom.h"
 
@@ -77,6 +82,31 @@ static void arm_config(uint8_t (*read)(uint16_t))
 }
 
 static studio2_machine_t m;
+
+/* An app in an ST2 with two banks in the window and a page of cart RAM:
+ * $0400-$07FF the counter app (it carries the claim), $C4 bank 0 (0xB0s),
+ * $C4 bank 1 (0xB1s), $D4 zeros. */
+static uint8_t banked[256 + 7 * 256];
+
+static void build_banked(void)
+{
+    static const uint8_t pages[] = { 0x04, 0x05, 0x06, 0x07, 0xC4, 0xC4, 0xD4 };
+    memset(banked, 0, sizeof banked);
+    memcpy(banked, "RCA2", 4);
+    banked[4] = sizeof pages + 1;       /* the header counts as a block */
+    for (unsigned i = 0; i < sizeof pages; i++)
+        banked[64 + i] = pages[i];
+    memcpy(banked + 256, test_counter_app, sizeof test_counter_app);
+    memset(banked + 256 + 4 * 256, 0xB0, 256);
+    memset(banked + 256 + 5 * 256, 0xB1, 256);
+}
+
+/* one register write by reads: REGSEL then REGDATA */
+static void reg(uint8_t r, uint8_t v)
+{
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGSEL + r));
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGDATA + v));
+}
 
 static void frames(int n)
 {
@@ -176,6 +206,47 @@ int main(void)
     t_us += S2_SILENCE_US + 1;
     rd(0x0000);
     check(status().swaps == base + 1, "after the bus went quiet a read of $0000 swaps");
+    studio2_cart_power_off(cart);
+
+    /* ---- protocol 2 ---- */
+    build_banked();
+    power_on(banked, sizeof banked);
+    st = status();
+    check(st.mailbox_mode && st.live_st2 && st.nbanks == 2 && st.bank == 0,
+          "a banked app: the mailbox, two banks, bank 0 in");
+    check(rd(0xC400) == 0xB0 && rd(0xCFFF) == 0xFF, "bank 0 serves $C400; a page it lacks reads $FF");
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGSEL + FN_HOT_BANK + 1));
+    check(rd(0xC400) == 0xB1 && status().bank == 1, "a read of $E980+1 puts bank 1 in at once");
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGSEL + FN_HOT_BANK));
+    check(rd(0xC4FF) == 0xB0, "and $E980 bank 0 back");
+    check(status().queue == 0, "bank selects never reach the mailbox's queue");
+
+    reg(FN_REG_PTRLO, 0x10);
+    reg(FN_REG_PTRHI, 0xD4);
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGSEL + FN_REG_POKE));
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGDATA + 0x5A));
+    rd((uint16_t)(FN_ARENA_BASE + FN_H_REGDATA + 0x5B));
+    check(rd(0xD410) == 0x5A && rd(0xD411) == 0x5B && rd(0xD412) == 0x00,
+          "the poke stream stores at the pointer, which moves on");
+
+    reg(FN_REG_CPSRCLO, 0x10);
+    reg(FN_REG_CPSRCHI, 0xD4);
+    reg(FN_REG_CPDSTLO, 0x80);
+    reg(FN_REG_CPDSTHI, 0xD4);
+    reg(FN_REG_CPLENLO, 2);
+    reg(FN_REG_CPLENHI, 0);
+    check(rd(0xD480) == 0x5A && rd(0xD481) == 0x5B, "COPY copies the bytes");
+    check(rd((uint16_t)(FN_ARENA_BASE + FN_R_COPYDONE)) == 1, "and FN_R_COPYDONE counts it");
+
+    /* RECT 0,0 8x1 SET: lit at the next frame's start, not before */
+    rd((uint16_t)((S2T_H_PARAM << 8) | 0));
+    rd((uint16_t)((S2T_H_PARAM << 8) | 0));
+    rd((uint16_t)((S2T_H_PARAM << 8) | 8));
+    rd((uint16_t)((S2T_H_PARAM << 8) | 1));
+    rd((uint16_t)((S2T_H_PARAM << 8) | S2T_SET));
+    rd((uint16_t)((S2T_H_OP << 8) | S2T_OP_RECT));
+    t_us += 20000;
+    check(rd(FN_RASTER_BASE) == 0xFF, "a RECT the text engine drew is in the next frame's raster");
     studio2_cart_power_off(cart);
 
     /* ---- CLEAR on the machine ---- */

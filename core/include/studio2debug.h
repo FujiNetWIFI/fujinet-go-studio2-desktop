@@ -206,6 +206,7 @@ typedef struct {
     int staged, staged_claim, staged_config, armed;
     uint32_t staged_crc;
     int swaps;
+    int nbanks, bank;        /* the bank window at $C400: banks, the one shown */
     uint8_t page_type[256];  /* S2PG_*: what the cartridge serves per page */
     int boot_state, boot_pct, boot_err;
     uint32_t boot_got, boot_total;

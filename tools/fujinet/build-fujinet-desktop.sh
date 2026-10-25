@@ -643,6 +643,31 @@ patch("lib/hardware/fnSystem.cpp", [
     ),
 ])
 
+# --- NDevice: let the desktop's exit hook drop an open channel ------------
+# rs232NetDevs is a global array; a channel a client left open (an HTTP
+# poll in flight when the session stopped) is otherwise torn down by its
+# destructor after the HTTP client's own globals are gone, and the process
+# dies on the way out (fujinet_desktop_entry.cpp, release_hosts_at_exit).
+patch("lib/device/NDevice/NDevice.h", [
+    (
+        '    bool processCommand(const FUJI_COMMAND_PACKET &packet);\n',
+        '    bool processCommand(const FUJI_COMMAND_PACKET &packet);\n'
+        '    void release_channel();\n',
+    ),
+])
+patch("lib/device/NDevice/NDevice.cpp", [
+    (
+        'NDevice::~NDevice()\n',
+        'void NDevice::release_channel()\n'
+        '{\n'
+        '    _protocol = nullptr;\n'
+        '    _parser = nullptr;\n'
+        '}\n'
+        '\n'
+        'NDevice::~NDevice()\n',
+    ),
+])
+
 # --- Drop in the desktop entry-point wrapper + export map -----------------
 desktop_dir = clone_dir / "desktop"
 desktop_dir.mkdir(exist_ok=True)

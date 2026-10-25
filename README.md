@@ -13,7 +13,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
 |---|---|
 | **Emulator** | MAME's RCA Studio II (`studio2.cpp`), its CDP1802 COSMAC (`cosmac.cpp`), its CDP1861 Pixie (`cdp1861.cpp`) and its beeper, transposed to C — the astrocade and SMS siblings' way. Frame for frame pixel-identical to MAME, keys included (`tools/ab/`). |
 | **Machine** | The RCA Studio II (NTSC, 1.76 MHz, 59.98 Hz), two 10-key keypads and CLEAR. No BIOS needed for CONFIG or FujiNet apps. |
-| **Cartridge** | The FujiNet Studio II cartridge (`fujinet-firmware` `pico/studio2` on `pico/common`): it sees every console read — display DMA included — and claims whole pages outside the BIOS, serving the 64×128 raster the 1861 fetches and a 16×10 text engine drawn into it, the mailbox at `$E400`, and up to 16K of image (ST2 or raw), CONFIG baked in. Its protocol (`fujimail`), wire codec (`fujibus`), image planner (`s2map`), staging and swap (`fuji_load`) and text engine (`s2_text`) are the cartridge firmware's own sources, staged verbatim. |
+| **Cartridge** | The FujiNet Studio II cartridge (`fujinet-firmware` `pico/studio2` on `pico/common`): it sees every console read — display DMA included — and claims whole pages outside the BIOS, serving the 64×128 raster the 1861 fetches and a 16×10 text engine drawn into it, the mailbox at `$E400`, and up to 48K of image (an ST2 with a bank window at `$C400`, or raw), CONFIG baked in. It speaks protocol 2: pages the program can write (a poke stream, COPY) and a graphics layer — pictures stamped at any pixel, rectangles, 16 sprites, the view shaken or inverted — composed into a double-buffered display, and drawn even while a FujiNet transaction is out. M.U.L.E. runs on it. Its protocol (`fujimail`), wire codec (`fujibus`), image planner (`s2map`), staging and swap (`fuji_load`) and text engine (`s2_text`) are the cartridge firmware's own sources, staged verbatim. |
 | **FujiNet** | The firmware's `RS232` PC target, built in-process as `libfujinet` and dialled by the cartridge over loopback (BoIP on **11518**, web admin on **11519**). |
 | **Frontends** | GNOME (GTK4/libadwaita), KDE (Qt6 Widgets), macOS (AppKit), Windows (Win32/GDI) — each with the display, a Keypad window, Preferences, a live FujiNet console log, and a debugger. |
 | **Packaging** | Per-frontend DEB/RPM/TGZ, two Flatpaks, a Windows (x86-64) zip and NSIS installer, and macOS bundles for Apple Silicon (arm64) and Intel (x86_64), all through GitHub Actions. |
@@ -28,7 +28,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
   the image in on the first fetch of `$0000`.
 - **The cartridge, faithfully.** Every image — CONFIG, a network-booted
   game, a local file — is planned by the cartridge's own `s2map`, so what
-  works here works on the cartridge: an ST2 of up to 64 blocks, or a raw
+  works here works on the cartridge: an ST2 of up to 192 blocks, or a raw
   image of up to 1K at `$0400`. An image it cannot plan is refused with the
   reason. A program that carries the `FUJI` claim at `$07FC` keeps the
   mailbox and the text engine; a game runs alone.

@@ -17,7 +17,8 @@
 #                     cmake/StageFujiProto.cmake, so the emulated cartridge
 #                     and the hardware cannot disagree. Everything else is
 #                     the RS232 PC runtime, built in-process as libfujinet by
-#                     cmake/FujiNetRuntime.cmake. Pinned to master, which
+#                     cmake/FujiNetRuntime.cmake. Pinned to PR #2187 (on
+#                     master as of #2182), which
 #                     already recognises .st2 as a ROM image to push and sets
 #                     TCP_NODELAY on the BoIP socket.
 #
@@ -32,11 +33,14 @@
 
 find_package(Git QUIET)
 
-# fujinet-firmware master (8fa1727b2, #2083): the RCA Studio II cartridge
-# (pico/studio2, #1881/#1965) on the shared pico/common fujimail, fujibus and
-# fujitcp (#2078-#2083), with its CONFIG baked in. Recorded in three places --
-# here and in both flatpak manifests (build-aux/flatpak/*.yml).
-set(FUJINET_COMMIT "8fa1727b277c1e418fd7b44517c1a99fada8f427")
+# fujinet-firmware PR #2187's head (035f09604): the RCA Studio II cartridge
+# (pico/studio2) with protocol 2 -- 192-block images and a bank window,
+# writable pages and COPY, the graphics layer, drawing during transactions --
+# on master as of #2182. It is on no branch of FujiNetWIFI (GitHub serves it
+# through refs/pull), so the flatpak manifests take it as an archive; back to
+# master once #2187 merges. Recorded in three places -- here and in both
+# flatpak manifests (build-aux/flatpak/*.yml).
+set(FUJINET_COMMIT "035f09604f221b8ba3d0b9897846ff73a7f2472d")
 set(FUJINET_URL "https://github.com/FujiNetWIFI/fujinet-firmware")
 
 # studio2_provide_dependency(NAME <n> PATH <p> SENTINEL <file> OVERRIDE <VAR>
@@ -171,7 +175,23 @@ function(studio2_provide_dependency)
           COMMAND ${GIT_EXECUTABLE} -c advice.detachedHead=false checkout
                   --quiet "${DEP_COMMIT}"
           WORKING_DIRECTORY "${_path}"
-          RESULT_VARIABLE _rc)
+          RESULT_VARIABLE _rc ERROR_QUIET)
+        if(NOT _rc EQUAL 0)
+          # A pin on no branch (a pull request's head) isn't in the clone:
+          # ask for the commit itself, then check it out.
+          execute_process(
+            COMMAND ${GIT_EXECUTABLE} fetch --quiet --filter=blob:none origin
+                    "${DEP_COMMIT}"
+            WORKING_DIRECTORY "${_path}"
+            RESULT_VARIABLE _rc)
+          if(_rc EQUAL 0)
+            execute_process(
+              COMMAND ${GIT_EXECUTABLE} -c advice.detachedHead=false checkout
+                      --quiet "${DEP_COMMIT}"
+              WORKING_DIRECTORY "${_path}"
+              RESULT_VARIABLE _rc)
+          endif()
+        endif()
       endif()
     endif()
   endif()

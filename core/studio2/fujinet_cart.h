@@ -37,6 +37,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* The largest image the cartridge plans (s2map's S2MAP_IMAGE_MAX: an ST2's
+ * header and 192 blocks), as messages print it; fujinet_cart.c holds the two
+ * to each other. */
+#define STUDIO2_CART_MAX_TEXT "49,408"
+#define STUDIO2_CART_MAX_BYTES 49408u
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -98,6 +104,7 @@ typedef struct {
     bool staged, staged_claim, staged_config, armed;
     uint32_t staged_crc;
     uint8_t swaps;
+    uint8_t nbanks, bank;     /* the bank window: banks, the one shown */
     int boot_state, boot_pct, boot_err;
     uint32_t boot_got, boot_total;
     uint8_t ackseq, status, err, reply_cmd;

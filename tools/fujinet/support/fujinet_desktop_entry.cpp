@@ -43,6 +43,9 @@
 
 #include "fnSystem.h"
 #include "fujiDevice.h"
+#include "rs232/rs232Network.h"
+
+extern rs232Network rs232NetDevs[MAX_NETWORK_DEVICES];
 
 extern void main_setup(int argc, char* argv[]);
 extern void fn_service_loop(void* param);
@@ -553,7 +556,7 @@ FUJINET_ENTRY int fujinet_desktop_copy_recent_log(char* output, int maxBytes) {
  * calls dir_close on the SD host's filesystem -- fnSDFAT, another
  * translation unit's global that may already have been destroyed -- and its
  * directory cache is freed twice: on Windows the process dies on the way
- * out once CONFIG has listed the SD card. fujiDevice::shutdown keeps the
+ * out once CONFIG has listed the SD card. (Network channels likewise, below.) fujiDevice::shutdown keeps the
  * local host mounted on purpose (it survives a restart), so return every
  * host to uninitialized here instead, while all the globals still exist.
  * Registered at the first start -- after every global was constructed -- so
@@ -566,6 +569,12 @@ static void release_hosts_at_exit()
         return;
     for (int i = 0; i < MAX_HOSTS; i++)
         theFuji->get_host(i)->set_type(HOSTTYPE_UNINITIALIZED);
+    /* The same for a network channel a client left open (an HTTP poll in
+     * flight when the session stopped): rs232NetDevs' destructors would
+     * close it after the HTTP client's globals are gone, and the process
+     * died on the way out. */
+    for (int i = 0; i < MAX_NETWORK_DEVICES; i++)
+        rs232NetDevs[i].release_channel();
 }
 
 FUJINET_ENTRY bool fujinet_desktop_start_runtime(

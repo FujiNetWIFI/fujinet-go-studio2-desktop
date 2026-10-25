@@ -62,8 +62,8 @@ if(NOT EXISTS "${FUJI_PROTO_DIR}/studio2/firmware/include/fuji_mailbox.h"
    OR NOT EXISTS "${FUJI_PROTO_DIR}/common/include/fujimail.h")
   message(FATAL_ERROR
     "${FUJINET_DIR} has no pico/studio2/firmware/include/fuji_mailbox.h or "
-    "pico/common/include/fujimail.h -- the pin must be on master at or after "
-    "#2083; see cmake/Dependencies.cmake.")
+    "pico/common/include/fujimail.h -- the pin must have the Studio II cart's "
+    "protocol 2 (#2187); see cmake/Dependencies.cmake.")
 endif()
 
 # The exact file list apply.sh grafts into MAME, relative to pico/. The CONFIG
@@ -83,8 +83,10 @@ set(FUJI_STAGE_FILES
   studio2/firmware/baked/fujiconfigrom.h
   common/src/fujimail.c
   common/src/fujibus.c
+  common/src/fuji_crc.c
   common/include/fujimail.h
   common/include/fujibus.h
+  common/include/fuji_crc.h
   common/include/fuji_mailbox_proto.h
   common/include/fuji_mailbox_check.h
   common/emu/fujitcp.c

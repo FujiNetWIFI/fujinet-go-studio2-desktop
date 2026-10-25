@@ -158,7 +158,8 @@ static uint8_t *read_cart(const char *path, uint32_t *len, char *why, int whysz)
     if (got >= CART_MAX) {
         free(buf);
         snprintf(why, (size_t)whysz,
-                 "the image is larger than the cartridge can serve (16,640 bytes)");
+                 "the image is larger than the cartridge can serve ("
+                 STUDIO2_CART_MAX_TEXT " bytes)");
         return NULL;
     }
     *len = (uint32_t)got;

@@ -45,6 +45,9 @@
 #include "s2_text.h"
 #include "fuji_load.h"
 
+_Static_assert(S2MAP_IMAGE_MAX == STUDIO2_CART_MAX_BYTES,
+               "STUDIO2_CART_MAX_TEXT is S2MAP_IMAGE_MAX");
+
 #define QUEUE_SIZE 4096
 #define POKE_MAX   4096
 
@@ -66,7 +69,7 @@ struct studio2_cart {
 
     uint8_t *push;
     uint32_t push_len;
-    uint8_t own_sel;
+    s2_copy_t copy;                     /* the COPY registers */
 
     uint32_t short_lines;               /* DMA bursts < 8 */
     uint16_t rline, rcol;               /* the last raster read's position */
@@ -177,6 +180,8 @@ static uint8_t c_stream_open(int stream, uint32_t size);
 static void c_stream_write(int stream, const uint8_t *chunk, unsigned len);
 static uint8_t c_stream_close(int stream, uint32_t got, bool aborted);
 static void c_arm_swap(void);
+static void c_own_reg(uint8_t reg, uint8_t value);
+static void c_idle(void);
 
 static void c_on_txn(const fujimail_txn_t *t)
 {
@@ -212,12 +217,14 @@ static const fujimail_port_t debug_port = {
     c_poke, c_link_up, c_transact, fujitcp_send_bare,
     c_stream_open, c_stream_write, c_stream_close, c_arm_swap,
     c_wait_link, NULL, c_on_txn, c_on_dbc,
+    c_own_reg,
 };
 
 static const fujimail_port_t quiet_port = {
     c_poke, c_link_up, c_transact, fujitcp_send_bare,
     c_stream_open, c_stream_write, c_stream_close, c_arm_swap,
     c_wait_link, NULL, NULL, NULL,
+    c_own_reg,
 };
 
 /*-------------------------------------------------
@@ -269,7 +276,7 @@ static void poke(studio2_cart_t *c, unsigned offset, uint8_t value)
 -------------------------------------------------*/
 
 /* One hotspot read by console address: the text engine's, or the mailbox's
- * (with the cart's own FN_REG_CONFIG beside fujimail's registers). */
+ * (fujimail hands the cart's own registers to c_own_reg). */
 static void dispatch(studio2_cart_t *c, uint16_t a)
 {
     if (a >= FN_TEXT_BASE)
@@ -277,23 +284,38 @@ static void dispatch(studio2_cart_t *c, uint16_t a)
         s2_text_event(&c->text, a);
         return;
     }
-    uint16_t off = (uint16_t)(a - FN_ARENA_BASE);
-    unsigned page = off & FN_H_PAGE_MASK;
-    if (page == FN_H_REGSEL)
-        c->own_sel = (off & 0xFF) < 0x80 ? (uint8_t)(off & 0xFF) : c->own_sel;
-    else if (page == FN_H_REGDATA && c->own_sel != 0xFF)
+    fujimail_read_hotspot((uint16_t)(a - FN_ARENA_BASE));
+}
+
+/* The cart's own registers, handed over by fujimail: CONFIG, and COPY. */
+static void own_reg(studio2_cart_t *c, uint8_t reg, uint8_t value)
+{
+    bool ran;
+
+    if (reg == FN_REG_CONFIG && value == FN_CONFIG_MAGIC)
     {
-        if (c->own_sel == FN_REG_CONFIG && (off & 0xFF) == FN_CONFIG_MAGIC)
-        {
-            pthread_mutex_lock(&c->loadlock);
-            fuji_load_stage_config(&c->load, _configrom, FUJI_CONFIGROM_SIZE);
-            fuji_load_arm(&c->load);
-            pthread_mutex_unlock(&c->loadlock);
-            publish_staged(c);
-        }
-        c->own_sel = 0xFF;
+        pthread_mutex_lock(&c->loadlock);
+        fuji_load_stage_config(&c->load, _configrom, FUJI_CONFIGROM_SIZE);
+        fuji_load_arm(&c->load);
+        pthread_mutex_unlock(&c->loadlock);
+        publish_staged(c);
+        return;
     }
-    fujimail_read_hotspot(off);
+    pthread_mutex_lock(&c->loadlock);
+    ran = s2map_copy_reg(&c->copy, fuji_load_live(&c->load), reg, value);
+    pthread_mutex_unlock(&c->loadlock);
+    if (ran)
+        poke(c, FN_R_COPYDONE, c->copy.done);
+}
+
+static void c_own_reg(uint8_t reg, uint8_t value) { own_reg(s_cart, reg, value); }
+
+/* The picture for the next frame: the text engine composes the background,
+ * the sprites and the view into the buffer the raster flips to at the
+ * frame's start (s2_raster_next). */
+static void compose(studio2_cart_t *c)
+{
+    (void)s2_text_compose(&c->text);
 }
 
 /* The new image is running. If it claims the mailbox it finds the
@@ -308,7 +330,6 @@ static void swapped(studio2_cart_t *c)
     swaps = c->load.swaps;
     mailbox = c->load.view[c->load.live].mailbox;
     pthread_mutex_unlock(&c->loadlock);
-    c->own_sel = 0xFF;
     if (mailbox)
     {
         s2_text_init(&c->text, c->arena + FN_R_DATA);
@@ -350,7 +371,7 @@ static void *worker_main(void *arg)
         {
             struct timespec until;
             clock_gettime(CLOCK_REALTIME, &until);
-            until.tv_nsec += 50 * 1000000L;
+            until.tv_nsec += 4 * 1000000L;
             if (until.tv_nsec >= 1000000000L)
             {
                 until.tv_sec++;
@@ -367,6 +388,7 @@ static void *worker_main(void *arg)
         {
             pthread_mutex_unlock(&c->qlock);
             s2_text_tick(&c->text, (uint32_t)now_ms());
+            compose(c);
             continue;
         }
         a = c->queue[c->qtail];
@@ -374,9 +396,40 @@ static void *worker_main(void *arg)
         pthread_mutex_unlock(&c->qlock);
 
         service(c, a);
+        compose(c);
         publish_link(c);
     }
     return NULL;
+}
+
+/* The worker, while a transaction waits for its reply (fujitcp_host.c's
+ * read_frame): as core0 does in fujibus_usb.c's pump, draw what the console
+ * sent since, up to the first mailbox read, which waits its turn. */
+static void c_idle(void)
+{
+    studio2_cart_t *c = s_cart;
+
+    for (;;)
+    {
+        uint16_t a;
+
+        pthread_mutex_lock(&c->qlock);
+        if (queue_depth(c) == 0)
+        {
+            pthread_mutex_unlock(&c->qlock);
+            break;
+        }
+        a = c->queue[c->qtail];
+        if (a < FN_TEXT_BASE || a == EV_SWAPPED)
+        {
+            pthread_mutex_unlock(&c->qlock);
+            break;
+        }
+        c->qtail = (c->qtail + 1) % QUEUE_SIZE;
+        pthread_mutex_unlock(&c->qlock);
+        s2_text_event(&c->text, a);
+    }
+    compose(c);
 }
 
 static void worker_start(studio2_cart_t *c)
@@ -451,6 +504,12 @@ int studio2_cart_read(studio2_cart_t *c, uint16_t a, uint32_t t, uint8_t *data)
     if (!c->powered)
         return 0;
     drain_pokes(c);
+
+    /* the worker composes all the time; serviced inline, here, just before
+     * the frame that shows it */
+    if (!c->worker_running && c->mailbox_mode && c->view->type[a >> 8] == S2PG_RASTER &&
+        (!c->bus.r_seen || t - c->bus.r_t > S2_VBLANK_US))
+        compose(c);
 
     r = s2_bus_read(&c->bus, c->view, a, t, &d);
     if ((r & S2_DRIVE) && c->view->type[a >> 8] == S2PG_RASTER)
@@ -678,7 +737,7 @@ static const char *plan_error(int err)
 {
     switch (err)
     {
-    case S2MAP_ETOOBIG:  return "the image is larger than the cartridge can serve (16,640 bytes)";
+    case S2MAP_ETOOBIG:  return "the image is larger than the cartridge can serve (" STUDIO2_CART_MAX_TEXT " bytes)";
     case S2MAP_EEMPTY:   return "the image is empty";
     case S2MAP_EBADPAGE: return "the FujiNet app names a page the cartridge may not claim";
     default:             return "the cartridge cannot plan this image";
@@ -743,10 +802,10 @@ int studio2_cart_power_on(studio2_cart_t *c, const uint8_t *image, uint32_t len,
     c->arena[FN_H_REGSEL + FN_HOT_STUB + 1] = 0x70;
     c->arena[FN_H_REGSEL + FN_HOT_T] = 0x23;
     s2_text_init(&c->text, c->arena + FN_R_DATA);
-    fuji_load_init(&c->load, c->buf[0], c->buf[1], c->arena, c->text.raster,
+    fuji_load_init(&c->load, c->buf[0], c->buf[1], c->arena, &c->text.disp,
                    _configrom, FUJI_CONFIGROM_SIZE);
+    memset(&c->copy, 0, sizeof c->copy);
     s2_bus_reset(&c->bus);
-    c->own_sel = 0xFF;
     c->short_lines = 0;
     c->rline = c->rcol = 0;
     c->npokes = 0;
@@ -792,6 +851,7 @@ int studio2_cart_power_on(studio2_cart_t *c, const uint8_t *image, uint32_t len,
         fujimail_paint();
         publish_link(c);
         worker_start(c);
+        fujitcp_set_idle(c->worker_running ? c_idle : NULL);
     }
     else
     {
@@ -805,6 +865,7 @@ void studio2_cart_power_off(studio2_cart_t *c)
     if (!c || !c->powered)
         return;
     worker_stop(c);
+    fujitcp_set_idle(NULL);
     fujitcp_close();
     c->powered = false;
 }
@@ -846,6 +907,8 @@ void studio2_cart_status(studio2_cart_t *c, studio2_cart_status_t *out)
     out->staged_crc = sp->crc;
     out->armed = c->load.armed;
     out->swaps = c->load.swaps;
+    out->nbanks = c->view->nbanks;
+    out->bank = c->view->bank;
     pthread_mutex_unlock(&c->loadlock);
 
     out->booted_game = c->direct || out->swaps > 0;
@@ -905,6 +968,7 @@ uint32_t studio2_cart_copy_raster(studio2_cart_t *c, uint8_t *dst, uint32_t max)
     uint32_t n = max < FN_RASTER_SIZE ? max : FN_RASTER_SIZE;
     if (!c)
         return 0;
-    memcpy(dst, c->text.raster, n);
+    /* the picture shown: the background with the sprites and the view */
+    memcpy(dst, c->text.disp.buf[c->text.disp.front], n);
     return n;
 }

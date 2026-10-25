@@ -430,6 +430,8 @@ int studio2debug_command(studio2debug *d, const char *command, char *dst, int ds
             static const char kind[] = ".RHD";   /* none, ROM, hotspot, raster (DMA) */
             out(&o, "image: %s, %u bytes, %d blocks, CRC %08X%s\n", c.live_st2 ? "ST2" : "raw",
                 c.live_size, c.live_blocks, c.live_crc, c.live_mailbox ? ", claims the mailbox" : "");
+            if (c.nbanks)
+                out(&o, "bank window $C400: %d banks, bank %d in\n", c.nbanks, c.bank);
             out(&o, "staged: %s%s  swaps %d  raster frames %u  short bursts %u\n",
                 c.staged ? (c.staged_config ? "CONFIG" : c.staged_claim ? "an app" : "a game") : "nothing",
                 c.armed ? " (armed)" : "", c.swaps, c.frames, c.short_lines);

@@ -44,6 +44,7 @@ endif()
 set(STUDIO2_FUJI_SOURCES
   ${FUJI_GEN}/fujimail.c
   ${FUJI_GEN}/fujibus.c
+  ${FUJI_GEN}/fuji_crc.c
   ${FUJI_GEN}/s2map.c
   ${FUJI_GEN}/fuji_load.c
   ${FUJI_GEN}/s2_text.c

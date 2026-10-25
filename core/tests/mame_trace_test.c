@@ -114,9 +114,9 @@ int main(void)
         f.lo = 1ull * STUDIO2_FRAME_CLOCKS;
         f.hi = 300ull * STUDIO2_FRAME_CLOCKS;
         run(&m, &f, 301, NULL, 0);
-        snprintf(what, sizeof what, "config: %lu reads, hash %016llX, as MAME's (805812, 1A8F7F8A97543B93)",
+        snprintf(what, sizeof what, "config: %lu reads, hash %016llX, as MAME's (805812, 1BC6C118D85EF4AF)",
                  f.count, (unsigned long long)f.hash);
-        check(f.count == 805812 && f.hash == 0x1A8F7F8A97543B93ULL, what);
+        check(f.count == 805812 && f.hash == 0x1BC6C118D85EF4AFULL, what);
     }
 
     studio2_cart_destroy(c);

@@ -14,6 +14,7 @@ M0  scaffold                                                          [x]
       no_embedded_roms registration, icon loop, CPack DEB/RPM/TGZ)
   [x] cmake/Dependencies.cmake pins fujinet-firmware master (8fa1727b2, #2083);
       cmake/StageFujiProto.cmake stages pico/studio2 + pico/common
+      (v0.2.0: PR #2187's head, 035f09604 -- see M13)
   [x] tools/fujinet: BoIP 11518, web UI 11519; patch 0001 (default hosts);
       the post-#1960 transforms (-Werror off when embedded, pyyaml/jinja2
       pip fallback); every heredoc anchor audited against the pin
@@ -121,6 +122,32 @@ M12 publish (repo, v0.1.0)                                            [x]
   [x] FujiNetWIFI/fujinet-go-studio2-desktop created, main pushed
   [x] v0.1.0 tagged (eec4b81), release.yml green, published 2026-10-20:
       12 assets as SMS's; every shipped binary scanned for BIOS bytes
+
+M13 cart protocol 2 (v0.2.0)                                          [x]
+  [x] pin: fujinet-firmware PR #2187's head (035f09604, on master #2182);
+      a fresh clone fetches the commit itself; flatpak takes GitHub's
+      archive of it (sha256 pinned; the FujiNet version reads 0000000)
+  [x] staging: + fuji_crc.c/h
+  [x] fujinet_cart.c mirrors the MAME device at the pin: own_reg (CONFIG,
+      COPY -> FN_R_COPYDONE), fuji_load on the text engine's display,
+      compose before a frame (inline) / after each service and on idle
+      (worker, 4 ms), the transaction-time idle hook (fujitcp_host.c's
+      read_frame wakes every 2 ms); status: banks; raster view = the
+      shown frame
+  [x] limits: 49,408-byte images (texts, tests); symbols: COPYDONE,
+      PTRLO/PTRHI/POKE/CPSRC/CPDST/CPLEN, FN_BANK
+  [x] tests: cart_seam (bank select, poke stream, COPY, a RECT reaching
+      the next frame); media (42,752-byte banked ST2 plans, 50,000
+      refused); mame_trace CONFIG golden from the protocol-2 MAME
+      (805812 / 1BC6C118D85EF4AF; game golden unchanged)
+  [x] runtime: every heredoc anchor ok on the new base; release_channel
+      at exit (an HTTP channel left open crashed the process on the way
+      out -- since v0.1.0, any N: app; M.U.L.E. polls constantly)
+  [x] mame_ab.py --direct: side A link-down too (it dialed 9995)
+  [x] checked: MAME A/B s2gfx (frames 22-599 equal; the startup frame
+      offset predates this), M.U.L.E. DIRECT and network-booted from the
+      SD host against a private muleserver: name, tables, join, lobby
+  [ ] when #2187 merges: pin master, flatpak back to `type: git`, v0.2.1
 
 Not yet done / known differences
   - macOS: written to the family's AppKit pattern, CI-verified only.

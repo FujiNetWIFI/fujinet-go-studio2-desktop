@@ -67,7 +67,19 @@
     <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
          it cannot disagree with the tree; past releases are literal. The
          release job checks that this first entry is still a template. -->
-    <release version="@PROJECT_VERSION@" date="2026-10-20">
+    <release version="@PROJECT_VERSION@" date="2026-10-25">
+      <description>
+        <p>
+          The FujiNet cartridge speaks protocol 2: images up to 48K with a
+          bank window, pages the program can write and copy, and a graphics
+          layer (pictures at any pixel, rectangles, 16 sprites, a shaking or
+          flashing screen) drawn even while FujiNet is busy. M.U.L.E. boots
+          and plays. Quitting while a network app was mid-request no longer
+          crashes.
+        </p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-10-20">
       <description>
         <p>
           First release: the RCA Studio II transposed from MAME with the

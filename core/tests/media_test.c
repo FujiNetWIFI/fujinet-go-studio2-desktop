@@ -79,6 +79,27 @@ static void write_forged(const char *path, uint32_t size, uint32_t crc)
 
 /* A minimal ST2: the 256-byte header ("RCA2", 2 blocks, the data block at
  * page $04) and one block of filler. */
+/* An ST2 game of `blocks` blocks on the pages a game may use, every page
+ * past $0400 in turn ($C4 on: the bank window), padded out to `len`. */
+static void write_big_st2(const char *path, unsigned blocks, size_t len)
+{
+    uint8_t *img = calloc(1, len);
+    unsigned pg = 0x04, i;
+    FILE *f;
+
+    memcpy(img, "RCA2", 4);
+    img[4] = (uint8_t)(blocks + 1);
+    for (i = 0; i < blocks; i++, pg++) {
+        while ((pg & 0x0F) < 4 || pg == 0x08 || pg == 0x09)
+            pg++;
+        img[0x40 + i] = (uint8_t)pg;
+    }
+    f = fopen(path, "wb");
+    fwrite(img, 1, len, f);
+    fclose(f);
+    free(img);
+}
+
 static void write_st2(const char *path)
 {
     uint8_t img[512];
@@ -136,10 +157,15 @@ int main(void)
           "into the cartridge directory");
     check(exists(dest), "and the copy exists");
 
+    snprintf(src, sizeof src, "%s/banked.st2", cfg);
+    write_big_st2(src, 166, 256 + 166 * 256);
+    check(studio2session_check_cart(src, msg, sizeof msg),
+          "a 42,752-byte ST2 of 166 blocks, the bank window's among them, plans");
+
     snprintf(src, sizeof src, "%s/big.st2", cfg);
-    write_file(src, 20000);
+    write_big_st2(src, 166, 50000);
     check(!studio2session_check_cart(src, msg, sizeof msg) && strstr(msg, "larger") != NULL,
-          "an image past 16,640 bytes is refused, and says why");
+          "an image past 49,408 bytes is refused, and says why");
 
     snprintf(src, sizeof src, "%s/notes.txt", cfg);
     write_file(src, 10);

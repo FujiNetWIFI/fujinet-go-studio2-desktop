@@ -160,7 +160,9 @@ def main():
            "-sound", "none", "-nothrottle", "-autoboot_script",
            os.path.join(ROOT, "tools", "ab", "abdump.lua")]
     if args.cart and args.direct:
-        env["FUJINET_IMAGE"] = os.path.abspath(args.cart)
+        # link down, as side B (-boip 127.0.0.1:1): a FujiNet app must never
+        # dial the everyday fujinet-pc (MAME's default 127.0.0.1:9995)
+        env.update(FUJINET_IMAGE=os.path.abspath(args.cart), FUJINET_TCP="127.0.0.1:1")
     elif args.cart:
         cmd += ["-cart", os.path.abspath(args.cart)]
     if args.config:

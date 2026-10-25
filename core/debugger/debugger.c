@@ -1044,7 +1044,8 @@ int studio2debug_bank_at(studio2debug *d, uint16_t addr)
 {
     (void)d;
     (void)addr;
-    return SYM_BANK_ANY;     /* the Studio II has no banking */
+    return SYM_BANK_ANY;     /* the console has none; the cart's window ($C400,
+                              * protocol 2) banks, but labels name addresses */
 }
 
 int studio2debug_label_address(studio2debug *d, const char *label)
@@ -1268,6 +1269,8 @@ static void cart_get_locked(studio2debug_cart *o)
     o->armed = st.armed;
     o->staged_crc = st.staged_crc;
     o->swaps = st.swaps;
+    o->nbanks = st.nbanks;
+    o->bank = st.bank;
     if (c)
     {
         studio2_cart_text_t tx;

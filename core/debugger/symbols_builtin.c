@@ -1,7 +1,8 @@
 /*
  * symbols_builtin.c -- the labels every session starts with: the console's
  * RAM, the FujiNet client runtime's entry, and the FujiNet cartridge's
- * mailbox, text engine and raster.
+ * mailbox (with protocol 2's poke, COPY and bank registers), text engine
+ * and raster.
  *
  * The cartridge labels are built from the staged fuji_mailbox.h and
  * s2_text.h's own macros (the cartridge firmware's headers, staged
@@ -58,6 +59,7 @@ void symtab_add_builtins(symtab *t)
         { FN_R_STAGED_CRC,   "FN_STAGED_CRC" },
         { FN_R_SWAPS,        "FN_SWAPS" },
         { FN_R_FRAMES,       "FN_FRAMES" },
+        { FN_R_COPYDONE,     "FN_COPYDONE" },
         { FN_H_REGSEL,       "FN_REGSEL" },
         { FN_H_REGSEL + FN_REG_DEVICE,    "FN_REG_DEVICE" },
         { FN_H_REGSEL + FN_REG_CMD,       "FN_REG_CMD" },
@@ -69,6 +71,13 @@ void symtab_add_builtins(symtab *t)
         { FN_H_REGSEL + FN_REG_BOOTSEL_1, "FN_REG_BOOTSEL_1" },
         { FN_H_REGSEL + FN_REG_BOOTSEL_2, "FN_REG_BOOTSEL_2" },
         { FN_H_REGSEL + FN_REG_CONFIG,    "FN_REG_CONFIG" },
+        { FN_H_REGSEL + FN_REG_PTRLO,     "FN_REG_PTRLO" },
+        { FN_H_REGSEL + FN_REG_PTRHI,     "FN_REG_PTRHI" },
+        { FN_H_REGSEL + FN_REG_POKE,      "FN_REG_POKE" },
+        { FN_H_REGSEL + FN_REG_CPSRCLO,   "FN_REG_CPSRC" },
+        { FN_H_REGSEL + FN_REG_CPDSTLO,   "FN_REG_CPDST" },
+        { FN_H_REGSEL + FN_REG_CPLENLO,   "FN_REG_CPLEN" },
+        { FN_H_REGSEL + FN_HOT_BANK,      "FN_BANK" },     /* + n: bank n */
         { FN_H_REGDATA,      "FN_REGDATA" },
         { FN_H_DATA,         "FN_TXDATA" },
     };

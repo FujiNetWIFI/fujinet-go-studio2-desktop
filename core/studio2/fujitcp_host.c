@@ -194,6 +194,15 @@ void fujitcp_abort(void)
         shutdown(s, SHUT_BOTH);
 }
 
+/* Called every ~2 ms while a reply is awaited (the cart draws meanwhile, as
+ * core0 does in fujibus_usb.c's pump); NULL when nothing needs it. */
+static void (*idle_fn)(void);
+
+void fujitcp_set_idle(void (*fn)(void))
+{
+    idle_fn = fn;
+}
+
 /* Read one complete SLIP frame (two 0xC0 delimiters) or time out. */
 static fb_status_t read_frame(uint8_t *buf, size_t cap, size_t *out_len, int secs)
 {
@@ -211,13 +220,25 @@ static fb_status_t read_frame(uint8_t *buf, size_t cap, size_t *out_len, int sec
             return FB_ENOLINK;
         if (remain <= 0)
             return FB_ETIMEOUT;
+        if (idle_fn && remain > 2)
+            remain = 2;                 /* wake for the idle hook */
         tv.tv_sec = (long)(remain / 1000);
         tv.tv_usec = (long)((remain % 1000) * 1000);
 
         FD_ZERO(&rf);
         FD_SET(s, &rf);
-        if (select((int)s + 1, &rf, NULL, NULL, &tv) <= 0)
+        switch (select((int)s + 1, &rf, NULL, NULL, &tv)) {
+        case 0:
+            if (idle_fn) {
+                idle_fn();
+                continue;               /* the deadline decides */
+            }
             return FB_ETIMEOUT;
+        case -1:
+            return FB_ETIMEOUT;
+        default:
+            break;
+        }
 
         /* Drain what is there, a byte at a time so nothing past the frame's
          * closing delimiter is consumed (a push frame may follow it). */
