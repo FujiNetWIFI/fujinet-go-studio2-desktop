@@ -149,6 +149,10 @@ M13 cart protocol 2 (v0.2.0)                                          [x]
   [x] checked: MAME A/B s2gfx (frames 22-599 equal; the startup frame
       offset predates this), M.U.L.E. DIRECT and network-booted from the
       SD host against a private muleserver: name, tables, join, lobby
+  [x] v0.2.0 tagged (2405bdc), release.yml green, published 2026-10-25:
+      12 assets as v0.1.0's; 23 shipped binaries scanned, no BIOS bytes
+      (the scan caught the BIOS itself); the published GNOME build boots
+      M.U.L.E. with FujiNet connected
   [ ] when #2187 merges: pin master, flatpak back to `type: git`, v0.2.1
 
 Not yet done / known differences
