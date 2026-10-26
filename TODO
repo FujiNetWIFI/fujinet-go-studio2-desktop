@@ -132,8 +132,10 @@ M13 cart protocol 2 (v0.2.0)                                          [x]
       COPY -> FN_R_COPYDONE), fuji_load on the text engine's display,
       compose before a frame (inline) / after each service and on idle
       (worker, 4 ms), the transaction-time idle hook (fujitcp_host.c's
-      read_frame wakes every 2 ms); status: banks; raster view = the
-      shown frame
+      read_frame wakes every 2 ms) and the reconnect wait; the CPU thread
+      composes too at each frame's start, try-locking the text engine (a
+      worker blocked on the link left CONFIG unpainted on Windows CI);
+      status: banks; raster view = the shown frame
   [x] limits: 49,408-byte images (texts, tests); symbols: COPYDONE,
       PTRLO/PTRHI/POKE/CPSRC/CPDST/CPLEN, FN_BANK
   [x] tests: cart_seam (bank select, poke stream, COPY, a RECT reaching

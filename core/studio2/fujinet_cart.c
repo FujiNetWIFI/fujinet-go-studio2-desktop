@@ -98,6 +98,8 @@ struct studio2_cart {
     unsigned npokes;
     atomic_bool poked;
     pthread_mutex_t loadlock;           /* load: staging against the swap */
+    pthread_mutex_t textlock;           /* the text engine: drawing against a
+                                         * compose from the CPU thread */
     atomic_bool busy;
 };
 
@@ -159,6 +161,8 @@ static fb_status_t c_transact(uint8_t device, uint8_t command,
     return st;
 }
 
+static void c_idle(void);
+
 /* Try to connect for up to `ms` (see the header comment). */
 static void c_wait_link(uint32_t ms)
 {
@@ -171,7 +175,13 @@ static void c_wait_link(uint32_t ms)
             break;
         if (now_ms() >= deadline)
             break;
-        sleep_ms(250);
+        for (int i = 0; i < 25 && c->worker_running; i++)
+        {
+            c_idle();           /* draw meanwhile, as during a transaction */
+            sleep_ms(10);
+        }
+        if (!c->worker_running)
+            sleep_ms(250);
     }
     publish_link(c);
 }
@@ -181,7 +191,6 @@ static void c_stream_write(int stream, const uint8_t *chunk, unsigned len);
 static uint8_t c_stream_close(int stream, uint32_t got, bool aborted);
 static void c_arm_swap(void);
 static void c_own_reg(uint8_t reg, uint8_t value);
-static void c_idle(void);
 
 static void c_on_txn(const fujimail_txn_t *t)
 {
@@ -245,7 +254,9 @@ static void drain_pokes(studio2_cart_t *c)
 
 static void poke(studio2_cart_t *c, unsigned offset, uint8_t value)
 {
+    pthread_mutex_lock(&c->textlock);
     s2_text_boot_poke(&c->text, offset, value);
+    pthread_mutex_unlock(&c->textlock);
     if (offset >= FN_R_PAINT_END)
         return;
     if (!t_on_worker)
@@ -281,7 +292,9 @@ static void dispatch(studio2_cart_t *c, uint16_t a)
 {
     if (a >= FN_TEXT_BASE)
     {
+        pthread_mutex_lock(&c->textlock);
         s2_text_event(&c->text, a);
+        pthread_mutex_unlock(&c->textlock);
         return;
     }
     fujimail_read_hotspot((uint16_t)(a - FN_ARENA_BASE));
@@ -312,10 +325,15 @@ static void c_own_reg(uint8_t reg, uint8_t value) { own_reg(s_cart, reg, value);
 
 /* The picture for the next frame: the text engine composes the background,
  * the sprites and the view into the buffer the raster flips to at the
- * frame's start (s2_raster_next). */
+ * frame's start (s2_raster_next). The worker does it as it draws, like
+ * core0; the CPU thread also does at each frame's start whenever the worker
+ * is not drawing (a try-lock), so a worker blocked on the link -- a slow
+ * connect, the reconnect wait -- never hides what it already drew. */
 static void compose(studio2_cart_t *c)
 {
+    pthread_mutex_lock(&c->textlock);
     (void)s2_text_compose(&c->text);
+    pthread_mutex_unlock(&c->textlock);
 }
 
 /* The new image is running. If it claims the mailbox it finds the
@@ -332,7 +350,9 @@ static void swapped(studio2_cart_t *c)
     pthread_mutex_unlock(&c->loadlock);
     if (mailbox)
     {
+        pthread_mutex_lock(&c->textlock);
         s2_text_init(&c->text, c->arena + FN_R_DATA);
+        pthread_mutex_unlock(&c->textlock);
         fujimail_paint();
     }
     publish_staged(c);
@@ -387,7 +407,9 @@ static void *worker_main(void *arg)
         if (queue_depth(c) == 0)
         {
             pthread_mutex_unlock(&c->qlock);
+            pthread_mutex_lock(&c->textlock);
             s2_text_tick(&c->text, (uint32_t)now_ms());
+            pthread_mutex_unlock(&c->textlock);
             compose(c);
             continue;
         }
@@ -427,7 +449,9 @@ static void c_idle(void)
         }
         c->qtail = (c->qtail + 1) % QUEUE_SIZE;
         pthread_mutex_unlock(&c->qlock);
+        pthread_mutex_lock(&c->textlock);
         s2_text_event(&c->text, a);
+        pthread_mutex_unlock(&c->textlock);
     }
     compose(c);
 }
@@ -505,11 +529,19 @@ int studio2_cart_read(studio2_cart_t *c, uint16_t a, uint32_t t, uint8_t *data)
         return 0;
     drain_pokes(c);
 
-    /* the worker composes all the time; serviced inline, here, just before
-     * the frame that shows it */
-    if (!c->worker_running && c->mailbox_mode && c->view->type[a >> 8] == S2PG_RASTER &&
+    /* just before the frame that shows it: serviced inline, always; with
+     * the worker, when it is not drawing (see compose) */
+    if (c->mailbox_mode && c->view->type[a >> 8] == S2PG_RASTER &&
         (!c->bus.r_seen || t - c->bus.r_t > S2_VBLANK_US))
-        compose(c);
+    {
+        if (!c->worker_running)
+            compose(c);
+        else if (pthread_mutex_trylock(&c->textlock) == 0)
+        {
+            (void)s2_text_compose(&c->text);
+            pthread_mutex_unlock(&c->textlock);
+        }
+    }
 
     r = s2_bus_read(&c->bus, c->view, a, t, &d);
     if ((r & S2_DRIVE) && c->view->type[a >> 8] == S2PG_RASTER)
@@ -711,6 +743,7 @@ studio2_cart_t *studio2_cart_create(void)
     pthread_cond_init(&c->qcv, NULL);
     pthread_mutex_init(&c->pklock, NULL);
     pthread_mutex_init(&c->loadlock, NULL);
+    pthread_mutex_init(&c->textlock, NULL);
     s2_text_init(&c->text, c->arena + FN_R_DATA);
     s2_bus_reset(&c->bus);
     s_cart = c;
@@ -726,6 +759,7 @@ void studio2_cart_destroy(studio2_cart_t *c)
     pthread_cond_destroy(&c->qcv);
     pthread_mutex_destroy(&c->pklock);
     pthread_mutex_destroy(&c->loadlock);
+    pthread_mutex_destroy(&c->textlock);
     free(c->buf[0]);
     free(c->buf[1]);
     if (s_cart == c)
