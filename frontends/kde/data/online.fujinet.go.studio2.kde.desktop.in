@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=FujiNet Go Studio II
+Name=FujiNet Go Studio II (KDE)
 GenericName=RCA Studio II Emulator
 Comment=RCA Studio II with built-in FujiNet
 Exec=fujinet-go-studio2-kde %f

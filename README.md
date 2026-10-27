@@ -236,10 +236,10 @@ publishes what it produced as a **draft** release:
 
 The version is declared in the tree (`project(… VERSION …)` and both
 metainfo files, which template it), not derived from the tag; `check-version`
-stops the release if they disagree. To release 0.2.0: set the version in
+stops the release if they disagree. To release 0.2.1: set the version in
 `CMakeLists.txt`, add a `<release>` entry with its date to both
 `frontends/*/data/*.metainfo.xml.in`, commit, then
-`git tag -a v0.2.0 && git push origin v0.2.0`. Running the workflow by hand
+`git tag -a v0.2.1 && git push origin v0.2.1`. Running the workflow by hand
 (Actions → Release → Run workflow) is a dry run: everything is built and
 tested and the artifacts are attached to the run, but no release is made.
 
