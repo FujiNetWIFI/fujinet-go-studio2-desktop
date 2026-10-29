@@ -650,6 +650,10 @@ static void action_fujinet_config(GSimpleAction *a, GVariant *p, gpointer user_d
 {
     Studio2Window *self = user_data;
     (void)a; (void)p;
+    if (studio2session_fujinet_external(self->session)) {
+        studio2_window_toast(self, "FujiNet is external: use its own web UI");
+        return;
+    }
     if (!studio2session_fujinet_running(self->session)) {
         studio2_window_toast(self, "FujiNet is not running");
         return;
@@ -661,6 +665,10 @@ static void action_fujinet_log(GSimpleAction *a, GVariant *p, gpointer user_data
 {
     Studio2Window *self = user_data;
     (void)a; (void)p;
+    if (studio2session_fujinet_external(self->session)) {
+        studio2_window_toast(self, "FujiNet is external: see its own console");
+        return;
+    }
     studio2_fujilog_show(GTK_WINDOW(self), self->session);
 }
 

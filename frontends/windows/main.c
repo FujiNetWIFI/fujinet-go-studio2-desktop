@@ -33,6 +33,10 @@
 #include "keypad/keypad_window.h"
 #include "resource.h"
 
+#ifndef EM_SETCUEBANNER
+#define EM_SETCUEBANNER 0x1501
+#endif
+
 #define WIN_CLASS "FujiNetGoStudio2"
 #define APP_TITLE "FujiNet Go Studio II"
 #define APP_TITLE_W L"FujiNet Go Studio II"
@@ -207,7 +211,8 @@ static void update_status(void)
     } else {
         g_pad_notice[0] = '\0';
         snprintf(line, sizeof line, "FujiNet: %s%s", st,
-                 studio2session_fujinet_running(g_session) ? "" : " (runtime not running)");
+                 studio2session_fujinet_external(g_session) ? " (external)"
+                 : studio2session_fujinet_running(g_session) ? "" : " (runtime not running)");
     }
     set_text_utf8(g_statusbar, line, 1);
 }
@@ -493,6 +498,11 @@ static void refresh_pad_list(void)
 
 static void open_web_ui(HWND owner)
 {
+    if (studio2session_fujinet_external(g_session)) {
+        MessageBoxA(owner, "FujiNet is external: use the web UI of the instance this app dials.",
+                    "FujiNet", MB_ICONINFORMATION | MB_OK);
+        return;
+    }
     if (!studio2session_fujinet_running(g_session)) {
         MessageBoxA(owner, "FujiNet is not running.", "FujiNet", MB_ICONINFORMATION | MB_OK);
         return;
@@ -548,6 +558,11 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         case IDC_SET_FUJINET: settings_apply_checkbox(hwnd, IDC_SET_FUJINET, "enable_fujinet", 1); return 0;
+        case IDC_SET_EXTERNAL:
+            settings_apply_checkbox(hwnd, IDC_SET_EXTERNAL, "fujinet_external", 0);
+            EnableWindow(GetDlgItem(hwnd, IDC_SET_EXT_ADDR),
+                         SendDlgItemMessageA(hwnd, IDC_SET_EXTERNAL, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            return 0;
         case IDC_SET_WEBUI: open_web_ui(hwnd); return 0;
         case IDC_SET_AUDIO: settings_apply_checkbox(hwnd, IDC_SET_AUDIO, "enable_audio", 1); return 0;
         case IDC_SET_GAMEPAD: settings_apply_checkbox(hwnd, IDC_SET_GAMEPAD, "enable_gamepad", 1); return 0;
@@ -565,9 +580,34 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (gen != seen) { seen = gen; refresh_pad_list(); }
         }
         return 0;
-    case WM_CLOSE:
+    case WM_CLOSE: {
+        /* The external address is saved here, and only if it is one. */
+        char addr[96], host[64];
+        const char *old;
+        int port;
+        {
+            char *first = addr, *last;
+            GetDlgItemTextA(hwnd, IDC_SET_EXT_ADDR, addr, sizeof addr);
+            while (*first == ' ' || *first == '\t') first++;
+            memmove(addr, first, strlen(first) + 1);
+            last = addr + strlen(addr);
+            while (last > addr && (last[-1] == ' ' || last[-1] == '\t')) *--last = '\0';
+        }
+        if (SendDlgItemMessageA(hwnd, IDC_SET_EXTERNAL, BM_GETCHECK, 0, 0) == BST_CHECKED &&
+            studio2session_parse_hostport(addr, host, sizeof host, &port) != 0) {
+            MessageBoxA(hwnd, "That is not an address:port.\n\nExample: 127.0.0.1:11518",
+                        "External FujiNet", MB_ICONWARNING);
+            SetFocus(GetDlgItem(hwnd, IDC_SET_EXT_ADDR));
+            return 0;
+        }
+        old = studio2session_get_str(g_session, "fujinet_external_addr", "");
+        if (studio2session_parse_hostport(addr, host, sizeof host, &port) == 0 && strcmp(old, addr) != 0) {
+            studio2session_set_str(g_session, "fujinet_external_addr", addr);
+            g_settings_dirty = 1;
+        }
         DestroyWindow(hwnd);
         return 0;
+    }
     case WM_DESTROY:
         KillTimer(hwnd, IDT_SETTINGS_PADS);
         g_settings_window = NULL;
@@ -714,7 +754,23 @@ static void show_settings(HINSTANCE inst)
     settings_checkbox(g_settings_window, inst, "Enable FujiNet (applied when this window closes)", IDC_SET_FUJINET,
                       16, y, 400, studio2session_get_int(g_session, "enable_fujinet", 1));
     y += 28;
-    snprintf(line, sizeof line, "Web UI: %s", studio2session_fujinet_webui_url(g_session));
+    settings_checkbox(g_settings_window, inst, "Use external FujiNet (applied when this window closes)", IDC_SET_EXTERNAL,
+                      16, y, 440, studio2session_get_int(g_session, "fujinet_external", 0));
+    y += 28;
+    settings_label(g_settings_window, inst, "Address:port:", 16, y + 3, 90, 18);
+    {
+        HWND edit = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", studio2session_get_str(g_session, "fujinet_external_addr", ""),
+                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 110, y, 220, 22,
+                                    g_settings_window, (HMENU)(INT_PTR)IDC_SET_EXT_ADDR, inst, NULL);
+        SendMessageA(edit, WM_SETFONT, (WPARAM)font, TRUE);
+        SendMessageA(edit, EM_SETCUEBANNER, FALSE, (LPARAM)L"127.0.0.1:11518");
+        EnableWindow(edit, studio2session_get_int(g_session, "fujinet_external", 0) != 0);
+    }
+    y += 30;
+    if (studio2session_fujinet_external(g_session))
+        snprintf(line, sizeof line, "Web UI: FujiNet is external");
+    else
+        snprintf(line, sizeof line, "Web UI: %s", studio2session_fujinet_webui_url(g_session));
     settings_label(g_settings_window, inst, line, 16, y + 5, 320, 18);
     settings_button(g_settings_window, inst, "Open", IDC_SET_WEBUI, 352, y, 100);
     y += 38;
@@ -794,6 +850,11 @@ static LRESULT CALLBACK log_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 static void show_fujinet_log(HINSTANCE inst)
 {
     RECT rc;
+    if (studio2session_fujinet_external(g_session)) {
+        MessageBoxA(g_hwnd, "FujiNet is external: its console output is in the process that is running it.",
+                    "FujiNet", MB_ICONINFORMATION | MB_OK);
+        return;
+    }
     if (g_log_window) { SetForegroundWindow(g_log_window); return; }
     {
         static int registered;

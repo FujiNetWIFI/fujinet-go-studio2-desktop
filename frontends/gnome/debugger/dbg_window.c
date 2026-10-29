@@ -828,7 +828,11 @@ static void refresh_fujinet(DbgWin *w, gboolean force)
     GString *t;
     int n = studio2debug_fujinet_trace(w->dbg, p, TRACE_MAX), i;
 
-    if (!studio2session_fujinet_running(w->session)) {
+    if (studio2session_fujinet_external(w->session)) {
+        studio2session_cart_status(w->session, status, sizeof status);
+        g_snprintf(note, sizeof note, "External FujiNet at %s. Cartridge: %s.",
+                   studio2session_boip_endpoint(w->session), status);
+    } else if (!studio2session_fujinet_running(w->session)) {
         g_strlcpy(note, "FujiNet is off (Preferences \xe2\x96\xb8 FujiNet).", sizeof note);
     } else {
         studio2session_cart_status(w->session, status, sizeof status);

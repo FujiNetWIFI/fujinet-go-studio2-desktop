@@ -125,6 +125,8 @@ void studio2session_default_opts(studio2session *s, studio2session_start_opts *o
     opts->use_bios = studio2session_get_int(s, "use_bios", 1);
     opts->analog_joystick = studio2session_get_int(s, "analog_joystick", 1);
     opts->enable_fujinet = studio2session_get_int(s, "enable_fujinet", 1);
+    opts->external_fujinet = studio2session_get_int(s, "fujinet_external", 0);
+    opts->boip_connect = studio2session_get_str(s, "fujinet_external_addr", NULL);
     opts->enable_audio = studio2session_get_int(s, "enable_audio", 1);
     opts->enable_gamepad = studio2session_get_int(s, "enable_gamepad", 1);
     opts->cart_path = studio2session_get_str(s, "cart", NULL);
@@ -172,7 +174,6 @@ static int host_up(struct studio2session *s, const char *cart_path)
     studio2_host_opts_t ho;
     uint8_t *cart = NULL, *bios = NULL;
     uint32_t cart_len = 0, bios_len = 0;
-    char boip[32];
     char why[256];
     int rc;
 
@@ -188,19 +189,18 @@ static int host_up(struct studio2session *s, const char *cart_path)
         bios = roms_load_bios(s, &bios_len);
 
     /* The cartridge dials FujiNet's BoIP port -- the in-process runtime's,
-     * or a standalone fujinet-pc's when the runtime is switched off. A
+     * or a standalone fujinet-pc's when the runtime is switched off or
+     * external. A
      * session whose FujiNet is disabled outright (fujinet_lib "", the tests)
      * dials nothing, so it can never pick up someone else's FujiNet (and
      * Windows' two-second refusal of a closed port never holds up power-on). */
     if (s->fujinet_disabled)
-        boip[0] = '\0';
-    else
-        snprintf(boip, sizeof boip, "127.0.0.1:%d", STUDIO2SESSION_BOIP_PORT);
+        s->boip_endpoint[0] = '\0';
     ho.bios = bios;
     ho.bios_size = bios_len;
     ho.cart = cart;
     ho.cart_size = cart_len;
-    ho.boip_hostport = boip;
+    ho.boip_hostport = s->boip_endpoint;
     ho.cart_sync = getenv("STUDIO2_CART_SYNC") != NULL;
     ho.mame_power_on = getenv("STUDIO2_MAME_POWER_ON") != NULL;
 
@@ -256,6 +256,9 @@ static void adopt_opts(struct studio2session *s, const studio2session_start_opts
     } else
         s->cart_path[0] = '\0';
     s->opts.cart_path = s->cart_path[0] ? s->cart_path : NULL;
+    snprintf(s->boip_addr, sizeof s->boip_addr, "%s",
+             opts->boip_connect ? opts->boip_connect : "");
+    s->opts.boip_connect = s->boip_addr;
 }
 
 int studio2session_start(studio2session *s, const studio2session_start_opts *opts)
@@ -276,11 +279,34 @@ int studio2session_start(studio2session *s, const studio2session_start_opts *opt
     studio2_host_release_all();
     studio2debug_trace_fujinet(s);
 
+    /* An external FujiNet is dialed at the address the settings name; a bad
+     * address is an error, not a silent fall back to the built-in one. */
+    s->fujinet_external = 0;
+    snprintf(s->boip_endpoint, sizeof s->boip_endpoint, "127.0.0.1:%d",
+             STUDIO2SESSION_BOIP_PORT);
+    if (s->opts.external_fujinet && !s->fujinet_disabled) {
+        char host[64];
+        int port;
+
+        if (studio2session_parse_hostport(s->opts.boip_connect, host, sizeof host,
+                                          &port) != 0) {
+            session_set_error(s, "\"%s\" is not an address:port for the "
+                              "external FujiNet (example: 127.0.0.1:%d)",
+                              s->opts.boip_connect ? s->opts.boip_connect : "",
+                              STUDIO2SESSION_BOIP_PORT);
+            return -1;
+        }
+        s->fujinet_external = 1;
+        snprintf(s->boip_endpoint, sizeof s->boip_endpoint, "%s:%d", host,
+                 port);
+    }
+
     /* FujiNet FIRST: it listens and the cartridge dials in, so the listener
      * has to exist before the machine's first transaction or the CONFIG
      * client boots reporting no link. Failing to start is NOT fatal (the
-     * cartridge also redials when a transaction finds the link down). */
-    if (s->opts.enable_fujinet && !s->fujinet_disabled) {
+     * cartridge also redials when a transaction finds the link down). An
+     * external FujiNet is someone else's to start. */
+    if (s->opts.enable_fujinet && !s->fujinet_disabled && !s->fujinet_external) {
         if (fujinet_start(s) == 0)
             fujinet_wait_for_boip(s, 3000);
     }
@@ -325,6 +351,7 @@ void studio2session_stop(studio2session *s)
     studio2debug_before_power_cycle(s);
     studio2_host_stop();
     fujinet_stop(s);
+    s->fujinet_external = 0;
     s->running = 0;
 }
 
@@ -350,6 +377,8 @@ int studio2session_restart(studio2session *s)
     /* FujiNet or the device toggles change what runs beside the machine:
      * a full restart. Anything else is a machine option: a power cycle. */
     if (!!opts.enable_fujinet != !!s->opts.enable_fujinet ||
+        !!opts.external_fujinet != !!s->opts.external_fujinet ||
+        strcmp(opts.boip_connect ? opts.boip_connect : "", s->boip_addr) ||
         !!opts.enable_audio != !!s->opts.enable_audio ||
         !!opts.enable_gamepad != !!s->opts.enable_gamepad) {
         studio2session_stop(s);
@@ -642,7 +671,75 @@ int studio2session_fujinet_running(const studio2session *s)
 
 const char *studio2session_fujinet_webui_url(const studio2session *s)
 {
-    return s->webui_url;
+    return s->fujinet_external ? "" : s->webui_url;
+}
+
+int studio2session_parse_hostport(const char *text, char *host, int hostsz,
+                              int *port)
+{
+    char buf[80], *colon, *end;
+    const char *name = "127.0.0.1";
+    long num = STUDIO2SESSION_BOIP_PORT;
+    size_t len, i;
+
+    if (!text) text = "";
+    while (*text == ' ' || *text == '\t') text++;
+    len = strlen(text);
+    while (len && (text[len - 1] == ' ' || text[len - 1] == '\t' ||
+                   text[len - 1] == '\n' || text[len - 1] == '\r'))
+        len--;
+    if (len >= sizeof buf) return -1;
+    memcpy(buf, text, len);
+    buf[len] = '\0';
+
+    if (len) {
+        colon = strrchr(buf, ':');
+        if (colon) {
+            *colon = '\0';
+            name = buf;
+            if (!*name) return -1;
+            text = colon + 1;
+        } else {
+            text = buf;
+        }
+        if (!*text) return -1;
+        num = strtol(text, &end, 10);
+        if (*end || num < 1 || num > 65535) return -1;
+        if (colon) {
+            /* A host name or an IPv4 literal: letters, digits, '-', '_' and
+             * '.'; a name of only digits and dots must be a whole address. */
+            int digits_only = 1, octet[4], used = 0, k;
+            for (i = 0; name[i]; i++) {
+                char ch = name[i];
+                int alnum = (ch >= '0' && ch <= '9') ||
+                            (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+                if (!alnum && ch != '-' && ch != '_' && ch != '.') return -1;
+                if (!(ch >= '0' && ch <= '9') && ch != '.') digits_only = 0;
+            }
+            if (name[0] == '.' || name[i - 1] == '.' || strstr(name, "..")) return -1;
+            if (digits_only) {
+                if (sscanf(name, "%d.%d.%d.%d%n", &octet[0], &octet[1],
+                           &octet[2], &octet[3], &used) != 4 || name[used])
+                    return -1;
+                for (k = 0; k < 4; k++)
+                    if (octet[k] < 0 || octet[k] > 255) return -1;
+            }
+        }
+    }
+    if ((int)strlen(name) >= hostsz) return -1;
+    memcpy(host, name, strlen(name) + 1);
+    *port = (int)num;
+    return 0;
+}
+
+int studio2session_fujinet_external(const studio2session *s)
+{
+    return s->fujinet_external;
+}
+
+const char *studio2session_boip_endpoint(const studio2session *s)
+{
+    return s->boip_endpoint[0] ? s->boip_endpoint : "127.0.0.1:11518";
 }
 
 int studio2session_cart_link_up(studio2session *s)

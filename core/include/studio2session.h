@@ -89,12 +89,17 @@ typedef struct {
                                  the stand-in, which runs FujiNet apps only) */
     int analog_joystick;      /* gamepad sticks drive the directions too */
     int enable_fujinet;       /* start the in-process FujiNet runtime */
+    int external_fujinet;     /* 1: don't start it; dial another FujiNet
+                               * instance at boip_connect instead */
+    const char *boip_connect; /* "host:port" or "port" the cartridge dials
+                               * (external only); NULL/"" = 127.0.0.1:11518 */
     int enable_audio;         /* open the SDL audio device */
     int enable_gamepad;       /* start the SDL gamepad thread */
 } studio2session_start_opts;
 
 /* Fills opts from the settings store (keys: cart use_bios analog_joystick
- * enable_fujinet enable_audio enable_gamepad). */
+ * enable_fujinet enable_audio enable_gamepad fujinet_external
+ * fujinet_external_addr). */
 void studio2session_default_opts(studio2session *s, studio2session_start_opts *opts);
 
 /* Starts FujiNet (if enabled) and then the machine.
@@ -360,7 +365,18 @@ int studio2session_media_is_bios(const char *path);
 const char *studio2session_roms_path(const studio2session *s);
 
 /* ---- FujiNet -------------------------------------------------------------*/
+/* Parses the "Use external FujiNet" address field: "host:port" (host a name
+ * or an IPv4 literal) or a bare "port". Empty text means the default,
+ * 127.0.0.1:11518. Returns 0 and fills host/port, or -1 when the text is not
+ * an address:port (nothing is written then). */
+int         studio2session_parse_hostport(const char *text, char *host,
+                                          int hostsz, int *port);
 int         studio2session_fujinet_running(const studio2session *s);
+/* 1 when the session was started to dial an external FujiNet. */
+int         studio2session_fujinet_external(const studio2session *s);
+/* "host:port" the cartridge dials (the running session's, or the default
+ * 127.0.0.1:11518 before the first start). */
+const char *studio2session_boip_endpoint(const studio2session *s);
 const char *studio2session_fujinet_webui_url(const studio2session *s);
 int         studio2session_fujinet_copy_log(studio2session *s, char *dst, int max);
 /* The cartridge's link to FujiNet: 1 up, 0 down, -1 not running. */

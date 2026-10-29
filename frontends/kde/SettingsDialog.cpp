@@ -15,6 +15,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSlider>
@@ -213,11 +214,19 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     auto *fform = new QFormLayout(fujiBox);
     QCheckBox *fuji = check("Enable FujiNet (applied by restarting the session)", "Run the in-process FujiNet the cartridge dials into. Off means no network and a link-down CONFIG client.", session, "enable_fujinet", 1);
     fform->addRow(fuji);
+    QCheckBox *external = check("Use external FujiNet (applied by restarting the session)", "Skip the built-in FujiNet and dial another instance at this address. Set that instance's BoIP listener to match.", session, "fujinet_external", 0);
+    fform->addRow(external);
+    auto *externalAddr = new QLineEdit(QString::fromUtf8(studio2session_get_str(session, "fujinet_external_addr", "")));
+    externalAddr->setPlaceholderText(QStringLiteral("127.0.0.1:11518"));
+    externalAddr->setEnabled(external->isChecked());
+    QObject::connect(external, &QCheckBox::toggled, externalAddr, &QWidget::setEnabled);
+    fform->addRow(QStringLiteral("Address:port"), externalAddr);
     const QString url = QString::fromUtf8(studio2session_fujinet_webui_url(session));
-    auto *web = new QLabel(url.toHtmlEscaped());
+    auto *web = new QLabel(studio2session_fujinet_external(session) ? QStringLiteral("FujiNet is external") : url.toHtmlEscaped());
     web->setTextInteractionFlags(Qt::TextSelectableByMouse);
     auto *open = new QPushButton(QStringLiteral("Open"));
     open->setToolTip(QStringLiteral("Open FujiNet's web UI in the browser"));
+    open->setEnabled(!studio2session_fujinet_external(session));
     QObject::connect(open, &QPushButton::clicked, &dlg, [url] { QDesktopServices::openUrl(QUrl(url)); });
     auto *webRow = new QHBoxLayout;
     webRow->addWidget(web, 1);
@@ -226,7 +235,19 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     outer->addWidget(fujiBox);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, [&] {
+        char host[64];
+        int port;
+        if (external->isChecked() &&
+            studio2session_parse_hostport(externalAddr->text().trimmed().toUtf8().constData(), host, sizeof host, &port) != 0) {
+            QMessageBox::warning(&dlg, QStringLiteral("External FujiNet"),
+                                 QStringLiteral("\"%1\" is not an address:port. Example: 127.0.0.1:11518")
+                                     .arg(externalAddr->text()));
+            externalAddr->setFocus();
+            return;
+        }
+        dlg.accept();
+    });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     outer->addWidget(buttons);
 
@@ -236,6 +257,14 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     bool changed = didImport;
     changed |= commit(session, "use_bios", 1, useBios->isChecked() ? 1 : 0);
     changed |= commit(session, "enable_fujinet", 1, fuji->isChecked() ? 1 : 0);
+    changed |= commit(session, "fujinet_external", 0, external->isChecked() ? 1 : 0);
+    {
+        const QByteArray addr = externalAddr->text().trimmed().toUtf8();
+        if (addr != QByteArray(studio2session_get_str(session, "fujinet_external_addr", ""))) {
+            studio2session_set_str(session, "fujinet_external_addr", addr.constData());
+            changed = true;
+        }
+    }
     changed |= commit(session, "enable_audio", 1, snd->isChecked() ? 1 : 0);
     changed |= commit(session, "enable_gamepad", 1, gp->isChecked() ? 1 : 0);
     return changed;

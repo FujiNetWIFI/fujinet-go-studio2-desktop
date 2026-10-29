@@ -50,6 +50,9 @@ struct studio2session {
     char fujinet_runtime_src[STUDIO2_PATH_MAX]; /* caller-given pristine tree, or "" */
     char webui_url[64];                 /* http://127.0.0.1:11519/ */
     int  fujinet_running;
+    int  fujinet_external;              /* dialing a FujiNet that isn't ours */
+    char boip_endpoint[80];             /* "host:port" the cartridge dials */
+    char boip_addr[80];                 /* the external address as typed */
 
     /* cross-thread system-action latch (see studio2session_sysaction_post) */
     pthread_mutex_t sysact_mtx;

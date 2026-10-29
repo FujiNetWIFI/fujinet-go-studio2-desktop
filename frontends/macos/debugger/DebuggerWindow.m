@@ -1503,7 +1503,11 @@ static void fixSize(NSView *view)
     int n = studio2debug_fujinet_trace(_dbg, p, TRACE_MAX);
     if (n < 0) n = 0;
 
-    if (!studio2session_fujinet_running(_session)) {
+    if (studio2session_fujinet_external(_session)) {
+        studio2session_cart_status(_session, status, (int)sizeof status);
+        _fujiNote.stringValue = [NSString stringWithFormat:@"External FujiNet at %s. Cartridge: %@.",
+                                 studio2session_boip_endpoint(_session), stripControl(status)];
+    } else if (!studio2session_fujinet_running(_session)) {
         _fujiNote.stringValue = @"FujiNet is off (Settings ▸ FujiNet).";
     } else {
         studio2session_cart_status(_session, status, (int)sizeof status);
