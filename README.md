@@ -77,6 +77,10 @@ The icon is the family mark in black on the Studio II's case tan
 (`#C8B58C`). The UI accent is the same tan, marking held keys, the Map
 target, the current line in the disassembly and the status dot.
 
+## External FujiNet
+
+A switch in Preferences makes the app connect to another FujiNet instance at a host:port you enter, e.g. `127.0.0.1:11518`, instead of starting the built-in one.
+
 ## Building
 
 ```sh
