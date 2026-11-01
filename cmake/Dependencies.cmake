@@ -33,15 +33,17 @@
 
 find_package(Git QUIET)
 
-# fujinet-firmware PR #2187's head (035f09604): the RCA Studio II cartridge
-# (pico/studio2) with protocol 2 -- 192-block images and a bank window,
-# writable pages and COPY, the graphics layer, drawing during transactions --
-# on master as of #2182. It is on no branch of FujiNetWIFI (GitHub serves it
-# through refs/pull), so the flatpak manifests take it as an archive; back to
-# master once #2187 merges. Recorded in three places -- here and in both
-# flatpak manifests (build-aux/flatpak/*.yml).
-set(FUJINET_COMMIT "035f09604f221b8ba3d0b9897846ff73a7f2472d")
-set(FUJINET_URL "https://github.com/FujiNetWIFI/fujinet-firmware")
+# fujinet-firmware PR #2187's head (035f09604) plus the BoIP idle-wait fix
+# (PR #2247; c6497120, branch boip-idle-wait-on-studio2-protocol2 on the
+# tschak909 fork): the RCA Studio II cartridge (pico/studio2) with protocol 2
+# -- 192-block images and a bank window, writable pages and COPY, the graphics
+# layer, drawing during transactions -- on master as of #2182. The fix cuts an
+# idle FujiNet-PC from ~1000 wakeups/s to ~100/s. TEMPORARY: it is on no
+# FujiNetWIFI branch, so the URL is the fork and the flatpak manifests take it
+# as an archive; back to master once #2187 and #2247 merge. Recorded in three
+# places -- here and in both flatpak manifests (build-aux/flatpak/*.yml).
+set(FUJINET_COMMIT "c64971202121a56a2f11e1235060c0a9c5eecbd5")
+set(FUJINET_URL "https://github.com/tschak909/fujinet-firmware")
 
 # studio2_provide_dependency(NAME <n> PATH <p> SENTINEL <file> OVERRIDE <VAR>
 #                           RESULT <out>

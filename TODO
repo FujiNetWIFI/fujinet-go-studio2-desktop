@@ -14,7 +14,8 @@ M0  scaffold                                                          [x]
       no_embedded_roms registration, icon loop, CPack DEB/RPM/TGZ)
   [x] cmake/Dependencies.cmake pins fujinet-firmware master (8fa1727b2, #2083);
       cmake/StageFujiProto.cmake stages pico/studio2 + pico/common
-      (v0.2.0: PR #2187's head, 035f09604 -- see M13)
+      (v0.2.0: PR #2187's head, 035f09604 -- see M13; now c64971202 = that + the
+      BoIP idle-wait fix, PR #2247, on the tschak909 fork; back to master when merged)
   [x] tools/fujinet: BoIP 11518, web UI 11519; patch 0001 (default hosts);
       the post-#1960 transforms (-Werror off when embedded, pyyaml/jinja2
       pip fallback); every heredoc anchor audited against the pin
@@ -124,7 +125,8 @@ M12 publish (repo, v0.1.0)                                            [x]
       12 assets as SMS's; every shipped binary scanned for BIOS bytes
 
 M13 cart protocol 2 (v0.2.0)                                          [x]
-  [x] pin: fujinet-firmware PR #2187's head (035f09604, on master #2182);
+  [x] pin: fujinet-firmware PR #2187's head (035f09604, on master #2182),
+      since re-pinned to c64971202 (+ BoIP idle-wait fix, PR #2247, fork);
       a fresh clone fetches the commit itself; flatpak takes GitHub's
       archive of it (sha256 pinned; the FujiNet version reads 0000000)
   [x] staging: + fuji_crc.c/h

@@ -116,14 +116,15 @@ modules:
           # embedded -- WITH_STUDIO2_ROMS is OFF above, which the build's
           # no_embedded_roms checks hold it to.)
       # Pinned exactly as cmake/Dependencies.cmake (FUJINET_COMMIT, PR
-      # #2187's head). A git source can't take a commit on no branch, so this
+      # #2187's head + the BoIP idle-wait fix, PR #2247, on the tschak909 fork;
+      # temporary). A git source can't take a commit on no branch, so this
       # is GitHub's archive of it (the FujiNet version then reads 0000000);
-      # back to `type: git` on master once #2187 merges.
+      # back to `type: git` on master once #2187 and #2247 merge.
       # studio2_provide_dependency() skips its own fetch once it finds
       # build.sh (the SENTINEL) already here.
       - type: archive
-        url: https://github.com/FujiNetWIFI/fujinet-firmware/archive/035f09604f221b8ba3d0b9897846ff73a7f2472d.tar.gz
-        sha256: 0e8aa22195f68fbfb6c225c53d197da4161631dfae1bde3e9d593dd1ecae2eff
+        url: https://github.com/tschak909/fujinet-firmware/archive/c64971202121a56a2f11e1235060c0a9c5eecbd5.tar.gz
+        sha256: c2829b8de0e246b977679cac7438777c800c5171c703dc6a37c315a797e20418
         dest: third_party/fujinet-firmware
       # Same reasoning: the sandboxed build step has no network access, but
       # tools/fujinet/build-fujinet-desktop.sh needs mbedTLS 3.x and
