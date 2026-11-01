@@ -203,6 +203,20 @@ static void set_text_at(GtkTextView *view, const char *text, gboolean follow)
         gtk_text_view_get_line_at_y(view, &it, (int)gtk_adjustment_get_value(adj), NULL);
         top = gtk_text_iter_get_line(&it);
     }
+    {
+        /* unchanged text leaves the buffer, the scroll position and any
+         * selection alone */
+        GtkTextIter s, e;
+        char *old;
+        gboolean same;
+
+        gtk_text_buffer_get_bounds(b, &s, &e);
+        old = gtk_text_buffer_get_text(b, &s, &e, TRUE);
+        same = strcmp(old, text) == 0;
+        g_free(old);
+        if (same)
+            return;
+    }
     gtk_text_buffer_set_text(b, text, -1);
     if (follow) {
         g_object_set_data(G_OBJECT(view), "follow", GINT_TO_POINTER(1));
@@ -645,10 +659,19 @@ static void refresh_cart(DbgWin *w)
     char info[256];
     static char text[4096];
 
+    studio2debug_cart before = *c;
+
     studio2debug_cart_get(w->dbg, c);
     studio2debug_cart_info(w->dbg, info, sizeof info);
-    gtk_widget_queue_draw(w->page_map);
-    gtk_widget_queue_draw(w->text_grid);
+    /* the two drawings only when what they draw changed */
+    if (before.present != c->present ||
+        memcmp(before.page_type, c->page_type, sizeof c->page_type) != 0)
+        gtk_widget_queue_draw(w->page_map);
+    if (before.present != c->present ||
+        memcmp(before.text, c->text, sizeof c->text) != 0 ||
+        memcmp(before.text_inv, c->text_inv, sizeof c->text_inv) != 0 ||
+        before.cursor_row != c->cursor_row || before.cursor_col != c->cursor_col)
+        gtk_widget_queue_draw(w->text_grid);
     if (!c->present) {
         set_text(w->cart_text, info);
         return;

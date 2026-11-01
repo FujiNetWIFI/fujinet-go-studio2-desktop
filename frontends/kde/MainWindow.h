@@ -12,7 +12,7 @@
 
 #include "studio2session.h"
 
-class DisplayWidget;
+class DisplayView;
 class KeypadWindow;
 class QAction;
 
@@ -43,12 +43,13 @@ private:
     void toggleKeypad();
     void pollGamepads();
     void applyPicture();
+    void useSoftwareDisplay();
     void showSettings();
     void restartSession();
     void showAbout();
 
     studio2session *m_session;
-    DisplayWidget *m_display = nullptr;
+    DisplayView *m_display = nullptr;
     KeypadWindow *m_keypad = nullptr;
     QLabel *m_status = nullptr;
     QLabel *m_dot = nullptr;

@@ -60,7 +60,13 @@ void fujinet_log_show(QWidget *parent, studio2session *session)
     auto *timer = new QTimer(win);
     auto refresh = [view, session]() {
         static char buf[128 * 1024];
+        static QByteArray last;
         const int n = studio2session_fujinet_copy_log(session, buf, sizeof(buf));
+        /* nothing new: leave the document (and its relayout) alone */
+        const QByteArray now = n > 0 ? QByteArray(buf) : QByteArray();
+        if (now == last && view->document()->characterCount() > 1)
+            return;
+        last = now;
         const bool atEnd = view->verticalScrollBar()->value() ==
                            view->verticalScrollBar()->maximum();
         view->setPlainText(n > 0 ? QString::fromUtf8(buf)

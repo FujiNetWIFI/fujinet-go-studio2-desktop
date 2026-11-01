@@ -163,6 +163,18 @@ int  studio2session_needs_bios(studio2session *s);
  * returns 1; returns 0 when unchanged, leaving dst alone. Pass 0 to force a
  * copy. */
 int  studio2session_copy_frame(studio2session *s, uint32_t *dst, uint64_t *serial_inout);
+/* Ask to be told when a new frame is ready, for a frontend with no frame
+ * clock of its own: cb(ctx) runs on the machine thread after each frame is
+ * published (a frame identical to the previous one is not published again).
+ * Keep it quick (post an event and return) and do not call into the session
+ * from it. Passing NULL stops the calls, and returns only after any call in
+ * flight has finished, so ctx may be freed right after. */
+typedef void (*studio2session_frame_cb)(void *ctx);
+void studio2session_set_frame_callback(studio2session *s, studio2session_frame_cb cb, void *ctx);
+/* Frames the machine has run since it started. Unlike copy_frame's serial it
+ * counts every frame, including the ones identical to their predecessor:
+ * use it to ask "is the machine running", not "is the picture changing". */
+uint64_t studio2session_frame_count(studio2session *s);
 /* The machine's refresh rate, rounded (60: 1.76 MHz / 29344 = 59.98 Hz). */
 int  studio2session_refresh_rate(studio2session *s);
 

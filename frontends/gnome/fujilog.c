@@ -9,6 +9,8 @@
 
 #include "fujilog.h"
 
+#include <string.h>
+
 typedef struct {
     GtkWindow *win;
     GtkTextView *view;
@@ -44,7 +46,21 @@ static gboolean refresh(gpointer user_data)
     }
 
     n = studio2session_fujinet_copy_log(lw->session, buf, sizeof buf);
-    gtk_text_buffer_set_text(b, n > 0 ? buf : "(no FujiNet output yet)", -1);
+    {
+        const char *text = n > 0 ? buf : "(no FujiNet output yet)";
+        GtkTextIter s, e;
+        char *old;
+        gboolean same;
+
+        /* nothing new: leave the buffer (and its relayout) alone */
+        gtk_text_buffer_get_bounds(b, &s, &e);
+        old = gtk_text_buffer_get_text(b, &s, &e, TRUE);
+        same = strcmp(old, text) == 0;
+        g_free(old);
+        if (same)
+            return G_SOURCE_CONTINUE;
+        gtk_text_buffer_set_text(b, text, -1);
+    }
 
     /* Follow the tail only while the reader is already at the bottom. */
     if (at_end && adj)

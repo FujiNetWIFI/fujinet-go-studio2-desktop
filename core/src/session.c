@@ -499,6 +499,17 @@ int studio2session_copy_frame(studio2session *s, uint32_t *dst, uint64_t *serial
     return studio2_host_frame_copy(dst, serial_inout);
 }
 
+void studio2session_set_frame_callback(studio2session *s, studio2session_frame_cb cb, void *ctx)
+{
+    (void)s;
+    studio2_host_set_frame_callback(cb, ctx);
+}
+
+uint64_t studio2session_frame_count(studio2session *s)
+{
+    return s->running ? studio2_host_frame_count() : 0;
+}
+
 int studio2session_refresh_rate(studio2session *s)
 {
     (void)s;

@@ -41,11 +41,11 @@ static uint32_t px[STUDIO2SESSION_FB_WIDTH * STUDIO2SESSION_FB_HEIGHT];
 
 static int wait_frames(studio2session *s, uint64_t *serial, int count, int timeout_ms)
 {
-    int got = 0, waited = 0;
+    uint64_t start = studio2session_frame_count(s);
+    int waited = 0;
     while (waited < timeout_ms) {
-        if (studio2session_copy_frame(s, px, serial)) {
-            if (++got >= count) return 1;
-        }
+        studio2session_copy_frame(s, px, serial);
+        if (studio2session_frame_count(s) >= start + (uint64_t)count) return 1;
         sleep_ms(2); waited += 2;
     }
     return 0;

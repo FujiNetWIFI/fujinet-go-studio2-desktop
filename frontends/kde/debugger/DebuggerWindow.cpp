@@ -390,7 +390,7 @@ DebuggerWindow::DebuggerWindow(studio2session *session, QWidget *parent)
     setCentralWidget(central);
 
     connect(&m_timer, &QTimer::timeout, this, &DebuggerWindow::tick);
-    m_timer.start(100);
+    /* started on show, stopped on hide: no wakeups while the window is away */
 }
 
 /* ---- building ------------------------------------------------------------- */
@@ -1299,8 +1299,15 @@ void DebuggerWindow::keyPressEvent(QKeyEvent *e)
  * only hides the window (it is not deleted, so it comes back as it was);
  * ignoring the close instead would make QApplication's quit, which closes
  * every window first, give up whenever it reached this one. */
+void DebuggerWindow::showEvent(QShowEvent *e)
+{
+    m_timer.start(100);
+    QMainWindow::showEvent(e);
+}
+
 void DebuggerWindow::hideEvent(QHideEvent *e)
 {
+    m_timer.stop();
     studio2debug_detach(m_dbg);
     QMainWindow::hideEvent(e);
 }

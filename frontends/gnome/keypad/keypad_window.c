@@ -63,6 +63,7 @@ static GtkWidget *g_map_button;
 static GtkWidget *g_map_hint;
 static guint g_capture_timer;
 static guint g_held_timer;
+static guint g_pad_timer;
 static GtkWidget *g_pad_box;
 static unsigned g_pad_generation = (unsigned)-1;
 static gboolean g_sysact_down[STUDIO2_SYSACT_COUNT];
@@ -461,6 +462,28 @@ static gboolean on_close(GtkWindow *w, gpointer d)
     return TRUE;
 }
 
+static void on_window_map(GtkWidget *w, gpointer d)
+{
+    (void)w; (void)d;
+    if (!g_held_timer)
+        g_held_timer = g_timeout_add(33, held_tick, NULL);
+    if (!g_pad_timer)
+        g_pad_timer = g_timeout_add(250, pad_tick, NULL);
+}
+
+static void on_window_unmap(GtkWidget *w, gpointer d)
+{
+    (void)w; (void)d;
+    if (g_held_timer) {
+        g_source_remove(g_held_timer);
+        g_held_timer = 0;
+    }
+    if (g_pad_timer) {
+        g_source_remove(g_pad_timer);
+        g_pad_timer = 0;
+    }
+}
+
 static void build_window(GtkWindow *parent)
 {
     GtkWidget *root, *pads, *console, *maprow, *toolbar, *header, *defaults, *contitle, *padtitle;
@@ -541,8 +564,9 @@ static void build_window(GtkWindow *parent)
     g_signal_connect(focus, "leave", G_CALLBACK(on_focus_leave), NULL);
     gtk_widget_add_controller(g_window, focus);
 
-    g_held_timer = g_timeout_add(33, held_tick, NULL);
-    g_timeout_add(250, pad_tick, NULL);
+    /* the two poll timers run only while the window is on screen */
+    g_signal_connect(g_window, "map", G_CALLBACK(on_window_map), NULL);
+    g_signal_connect(g_window, "unmap", G_CALLBACK(on_window_unmap), NULL);
     set_map_state(-2);
 }
 

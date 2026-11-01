@@ -114,12 +114,39 @@ static pthread_mutex_t s_frame_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t s_frame[STUDIO2_FB_WIDTH * STUDIO2_FB_HEIGHT];
 static uint64_t s_frame_serial = 0;
 
+static pthread_mutex_t s_cb_lock = PTHREAD_MUTEX_INITIALIZER;
+static studio2_host_frame_cb s_frame_cb;
+static void *s_frame_cb_ctx;
+
+void studio2_host_set_frame_callback(studio2_host_frame_cb cb, void *ctx)
+{
+    pthread_mutex_lock(&s_cb_lock);
+    s_frame_cb = cb;
+    s_frame_cb_ctx = ctx;
+    pthread_mutex_unlock(&s_cb_lock);
+}
+
+/* A frame identical to the one in the slot is not a new frame: the serial
+ * stays and nobody is called. The machine runs at 60 Hz whatever it shows,
+ * and most of what a FujiNet cartridge shows (CONFIG, a menu) does not move,
+ * so without this the frontends would copy, upload and draw the same picture
+ * sixty times a second. */
 static void frame_publish(const uint32_t *fb)
 {
     pthread_mutex_lock(&s_frame_lock);
+    if (s_frame_serial != 0 && memcmp(s_frame, fb, sizeof s_frame) == 0)
+    {
+        pthread_mutex_unlock(&s_frame_lock);
+        return;
+    }
     memcpy(s_frame, fb, sizeof s_frame);
     s_frame_serial++;
     pthread_mutex_unlock(&s_frame_lock);
+
+    pthread_mutex_lock(&s_cb_lock);
+    if (s_frame_cb)
+        s_frame_cb(s_frame_cb_ctx);
+    pthread_mutex_unlock(&s_cb_lock);
 }
 
 int studio2_host_frame_copy(uint32_t *dst, uint64_t *serial_inout)

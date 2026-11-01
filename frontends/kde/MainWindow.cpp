@@ -24,6 +24,7 @@
 #include <QUrl>
 
 #include "DisplayWidget.h"
+#include "SoftDisplayWidget.h"
 #include "FujiNetWindows.h"
 #include "KeyForward.h"
 #include "SettingsDialog.h"
@@ -42,8 +43,12 @@ MainWindow::MainWindow(studio2session *session, QWidget *parent)
     resize(984, 738 + 60);
     setAcceptDrops(true);
 
-    m_display = new DisplayWidget(session, this);
-    setCentralWidget(m_display);
+    auto *gpu = new DisplayWidget(session, this);
+    m_display = gpu;
+    setCentralWidget(gpu);
+    /* No usable GPU device: fall back to painting in software */
+    connect(gpu, &QRhiWidget::renderFailed, this, &MainWindow::useSoftwareDisplay,
+            Qt::QueuedConnection);
 
     m_dot = new QLabel(QStringLiteral("●"));
     m_status = new QLabel(QStringLiteral("Starting..."));
@@ -202,6 +207,16 @@ void MainWindow::showSettings()
     applyPicture();
     syncMachineMenu();
     if (restart) restartSession();
+}
+
+void MainWindow::useSoftwareDisplay()
+{
+    if (dynamic_cast<SoftDisplayWidget *>(m_display))
+        return;
+    auto *soft = new SoftDisplayWidget(m_session, this);
+    m_display = soft;
+    setCentralWidget(soft);   /* deletes the GPU display, which stops its feed */
+    applyPicture();
 }
 
 void MainWindow::applyPicture()
