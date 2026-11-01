@@ -43,10 +43,13 @@ void DisplayWidget::tick()
     if (!studio2session_copy_frame(m_session, m_fb.data(), &m_serial))
         return;
 
-    /* The session's pixels are 0x00RRGGBB, which is exactly
-     * QImage::Format_RGB32 (the alpha byte is ignored); a straight copy. */
-    std::memcpy(m_image.bits(), m_fb.data(),
-                (size_t)STUDIO2SESSION_FB_WIDTH * STUDIO2SESSION_FB_HEIGHT * 4);
+    /* The pixels are 0x00RRGGBB; Format_RGB32 needs 0xFFRRGGBB, or KWin
+     * composites the zero alpha as see-through, so force alpha on. */
+    const size_t n = (size_t)STUDIO2SESSION_FB_WIDTH * STUDIO2SESSION_FB_HEIGHT;
+    quint32 *dst = reinterpret_cast<quint32 *>(m_image.bits());
+    const quint32 *src = reinterpret_cast<const quint32 *>(m_fb.data());
+    for (size_t i = 0; i < n; i++)
+        dst[i] = src[i] | 0xFF000000u;
     m_haveFrame = true;
     update();
 }
