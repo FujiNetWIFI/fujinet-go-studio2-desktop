@@ -65,6 +65,20 @@ static int wait_status(studio2session *s, const char *want, int timeout_ms)
     return 0;
 }
 
+/* The cartridge is powered on by the machine thread, after load_cart (or a
+ * power cycle) has returned -- a failed BoIP connect must not stall the
+ * caller -- so what it reports (booted_game, the status) is not true until
+ * the thread gets there. Poll for it, as wait_status does. */
+static int wait_booted_game(studio2session *s, int want, int timeout_ms)
+{
+    int waited = 0;
+    while (waited < timeout_ms) {
+        if (!!studio2session_cart_booted_game(s) == !!want) return 1;
+        sleep_ms(5); waited += 5;
+    }
+    return 0;
+}
+
 /* The test image keeps its state in RAM; peek at it through the debugger
  * (which stops the machine while attached) and let it run on. */
 static uint8_t ram(studio2session *s, uint16_t addr)
@@ -190,7 +204,7 @@ int main(void)
     check(studio2session_load_cart(s, app) == 0, "load_cart");
     check(strcmp(studio2session_cart_path(s), app) == 0, "the cart path is remembered");
     check(strcmp(studio2session_get_str(s, "cart", ""), app) == 0, "and persisted");
-    check(studio2session_cart_booted_game(s), "something other than CONFIG is in the cartridge");
+    check(wait_booted_game(s, 1, 5000), "something other than CONFIG is in the cartridge");
     check(moving(s), "the app runs (its counter moves)");
 
     /* the keypad reaches the program */
