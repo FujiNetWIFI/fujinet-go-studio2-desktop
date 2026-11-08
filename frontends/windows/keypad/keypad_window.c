@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../help/help_window.h"
 #include "../key_forward.h"
 
 #define PAD_CLASS "FujiNetGoStudio2Keypad"
@@ -62,7 +63,7 @@ static pad_button g_btn[STUDIO2_TARGET_COUNT];
 static int g_nbtn;
 static int g_held = -1;          /* button index under the captured mouse */
 static int g_map_state = -2;     /* -2 idle, -1 armed, >=0 awaiting a key/button */
-static RECT g_map_rc, g_defaults_rc, g_hint_rc;
+static RECT g_map_rc, g_defaults_rc, g_help_rc, g_hint_rc;
 static RECT g_head_rc[2], g_pads_rc[2], g_box_rc[2];
 static RECT g_gp_head_rc, g_gp_row_rc[PAD_ROWS];
 static unsigned g_shown_held[2];
@@ -130,7 +131,8 @@ static void layout(void)
 
     SetRect(&g_map_rc, MARGIN, y, MARGIN + 70, y + 30);
     SetRect(&g_defaults_rc, MARGIN + 76, y, MARGIN + 76 + 84, y + 30);
-    SetRect(&g_hint_rc, MARGIN + 76 + 84 + 10, y, g_total_w - MARGIN, y + 30);
+    SetRect(&g_help_rc, g_total_w - MARGIN - 60, y, g_total_w - MARGIN, y + 30);
+    SetRect(&g_hint_rc, MARGIN + 76 + 84 + 10, y, g_total_w - MARGIN - 70, y + 30);
     y += 30 + MARGIN + 4;
 
     /* The gamepads: a fixed number of rows, so the window never resizes
@@ -364,6 +366,7 @@ static void paint_panel(HDC dc)
 
     draw_button(dc, &g_map_rc, g_map_state == -2 ? "Map" : "Done", 0, g_map_state != -2);
     draw_button(dc, &g_defaults_rc, "Defaults", 0, 0);
+    draw_button(dc, &g_help_rc, "Help", 0, 0);
 
     if (g_hint[0]) {
         SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
@@ -419,6 +422,7 @@ static LRESULT CALLBACK pad_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         int i = hit(x, y), row, seg;
 
         if (PtInRect(&g_map_rc, p)) { set_map_state(g_map_state == -2 ? -1 : -2); return 0; }
+        if (PtInRect(&g_help_rc, p)) { studio2_help_show(hwnd, "keypad"); return 0; }
         if (PtInRect(&g_defaults_rc, p)) {
             studio2session_bindings_reset(g_session);
             snprintf(g_hint, sizeof g_hint, "Every key and button is back to its default");

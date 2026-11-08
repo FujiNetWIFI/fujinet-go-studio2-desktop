@@ -19,6 +19,7 @@ enable_language(RC)
 
 add_executable(fujinet-go-studio2-windows WIN32
   main.c
+  help/help_window.c
   keypad/keypad_window.c
   debugger/dbg_window.c
   resource.rc

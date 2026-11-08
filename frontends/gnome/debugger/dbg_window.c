@@ -35,6 +35,7 @@
 
 #include "studio2debug.h"
 #include "../window.h"
+#include "../help/help_window.h"
 
 #define DISASM_WINDOW 48
 #define NREGS 25
@@ -1369,9 +1370,24 @@ static void on_fuji_clear(GtkButton *b, gpointer ud)
     refresh_fujinet(w, TRUE);
 }
 
+/* Help's contexts, one per tab */
+static const char *const k_tab_contexts[] = {
+    "debugger/prompt",
+    "debugger/cpu",
+    "debugger/disassembly",
+    "debugger/video",
+    "debugger/io",
+    "debugger/breakpoints",
+    "debugger/cart",
+    "debugger/fujinet",
+};
+
 static void on_switch_page(GtkNotebook *nb, GtkWidget *page, guint num, gpointer ud)
 {
+    DbgWin *hw = ud;
     (void)nb; (void)page;
+    if (num < G_N_ELEMENTS(k_tab_contexts))
+        studio2_help_set_context(hw->win, k_tab_contexts[num]);
     if (num == TAB_FUJINET) refresh_fujinet(ud, FALSE);
 }
 
@@ -1387,6 +1403,7 @@ static gboolean on_key(GtkEventControllerKey *c, guint keyval, guint code,
     DbgWin *w = ud;
     (void)c; (void)code;
     switch (keyval) {
+    case GDK_KEY_F1: studio2_help_for(w->win); return TRUE;
     case GDK_KEY_F5: on_run(NULL, w); return TRUE;
     case GDK_KEY_F7: on_step(NULL, w); return TRUE;
     case GDK_KEY_F8:
@@ -1919,6 +1936,7 @@ void studio2_debugger_show(GtkWindow *parent, studio2session *session)
     gtk_box_append(GTK_BOX(root), notebook);
     tab = tab_from_env();
     if (tab >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), tab);
+    studio2_help_set_context(w->win, k_tab_contexts[tab > 0 ? tab : 0]);
     g_signal_connect(notebook, "switch-page", G_CALLBACK(on_switch_page), w);
 
     overlay = adw_toast_overlay_new();
@@ -1927,6 +1945,7 @@ void studio2_debugger_show(GtkWindow *parent, studio2session *session)
 
     /* the status line -- why the machine stopped -- is the title's subtitle */
     header = adw_header_bar_new();
+    adw_header_bar_pack_end(ADW_HEADER_BAR(header), studio2_help_button(NULL));
     w->title = ADW_WINDOW_TITLE(adw_window_title_new("Debugger", ""));
     adw_header_bar_set_title_widget(ADW_HEADER_BAR(header), GTK_WIDGET(w->title));
     toolbar = adw_toolbar_view_new();

@@ -29,6 +29,7 @@
 #include "KeyForward.h"
 #include "SettingsDialog.h"
 #include "debugger/DebuggerWindow.h"
+#include "help/HelpWindow.h"
 #include "keypad/KeypadWindow.h"
 
 static const char *const kCartFilter =
@@ -39,6 +40,7 @@ MainWindow::MainWindow(studio2session *session, QWidget *parent)
     : QMainWindow(parent), m_session(session)
 {
     setWindowTitle(QStringLiteral("FujiNet Go Studio II"));
+    setProperty("studio2HelpContext", QStringLiteral("main"));
     /* the 246 lines three times over, at the TV's 4:3 */
     resize(984, 738 + 60);
     setAcceptDrops(true);
@@ -168,6 +170,18 @@ void MainWindow::buildMenus()
     });
 
     QMenu *help = menuBar()->addMenu(QStringLiteral("&Help"));
+    {
+        /* works from every window of the app (the Controllers window and the
+         * Debugger have the keyboard too) */
+        QAction *helpAct = help->addAction(QStringLiteral("FujiNet Go Studio II &Help"));
+        helpAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_H));
+        helpAct->setShortcutContext(Qt::ApplicationShortcut);
+        addAction(helpAct);
+        connect(helpAct, &QAction::triggered, this, [this] {
+            studio2HelpFor(QApplication::activeWindow() ? QApplication::activeWindow() : this);
+        });
+    }
+    help->addSeparator();
     help->addAction(QStringLiteral("&About FujiNet Go Studio II"), this, &MainWindow::showAbout);
 }
 
@@ -323,8 +337,16 @@ void MainWindow::checkNeedsBios()
                                            "without it. Import your own copy and the console goes "
                                            "back to CONFIG to boot the game again."));
     QPushButton *import = box->addButton(QStringLiteral("Import BIOS..."), QMessageBox::AcceptRole);
+    QPushButton *help = box->addButton(QStringLiteral("Help"), QMessageBox::HelpRole);
     box->addButton(QStringLiteral("Not Now"), QMessageBox::RejectRole);
-    connect(box, &QMessageBox::buttonClicked, this, [this, import](QAbstractButton *b) {
+    connect(box, &QMessageBox::buttonClicked, this, [this, import, help](QAbstractButton *b) {
+        if (b == help) {
+            /* the topic opens; the message stays unless it is dismissed */
+            studio2HelpShow(this, QStringLiteral("nobios"));
+            m_needsBiosShown = false;
+            checkNeedsBios();
+            return;
+        }
         if (b != import) return;
         if (SettingsDialog::importBios(this, m_session) < 0) return;
         runSysaction(STUDIO2_SYSACT_RESET_CONFIG);

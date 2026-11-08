@@ -32,7 +32,8 @@
       remapped to a key or a gamepad button. A native debugger has a command
       prompt, the 1802's registers and the console RAM, disassembly with
       breakpoints, the 1861's raster, the keypads and I/O ports, and the
-      FujiNet cartridge with its page map and text screen.
+      FujiNet cartridge with its page map and text screen. Built-in,
+      searchable Help covers all of it.
     </p>
     <p>
       Nothing copyrighted is included. CONFIG and FujiNet programs run on the

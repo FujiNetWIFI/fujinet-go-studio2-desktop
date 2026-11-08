@@ -29,6 +29,7 @@
 #import "KeypadWindow.h"
 
 #import "../KeyForward.h"
+#import "../help/HelpWindow.h"
 
 #include <string.h>
 
@@ -223,6 +224,7 @@ static NSRect cell(CGFloat x, CGFloat top, int col, int row)
                     backing:NSBackingStoreBuffered
                       defer:NO];
     [win setTitle:@"Keypad"];
+    STUDIO2SetHelpContext(win, @"keypad");
     /* Floats above the machine's window and stays out of the way. */
     [win setLevel:NSFloatingWindowLevel];
     [win setReleasedWhenClosed:NO];
@@ -293,7 +295,10 @@ static NSRect cell(CGFloat x, CGFloat top, int col, int row)
     [content addSubview:defaults];
 
     _hint = [NSTextField labelWithString:@""];
-    [_hint setFrame:NSMakeRect(MARGIN + 176, y - 24, width - MARGIN - 190, 18)];
+    NSButton *helpBtn = STUDIO2HelpButton(@"keypad");
+    [helpBtn setFrame:NSMakeRect(width - MARGIN - 30, y - 28, 26, 26)];
+    [content addSubview:helpBtn];
+    [_hint setFrame:NSMakeRect(MARGIN + 176, y - 24, width - MARGIN - 226, 18)];
     [_hint setTextColor:[NSColor secondaryLabelColor]];
     [_hint setLineBreakMode:NSLineBreakByTruncatingTail];
     [content addSubview:_hint];

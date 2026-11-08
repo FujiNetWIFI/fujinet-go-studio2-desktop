@@ -19,6 +19,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "../KeyForward.h"
+#import "../help/HelpWindow.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -686,6 +687,8 @@ static void fixSize(NSView *view)
 - (void)tabView:(NSTabView *)tabView didSelectTabViewItem:(NSTabViewItem *)item
 {
     (void)tabView;
+    /* The Help button and Command+? open the tab being shown. */
+    STUDIO2SetHelpContext(_window, [@"debugger/" stringByAppendingString:item.identifier]);
     if ([_tabs indexOfTabViewItem:item] == TAB_FUJINET) [self refreshFujinet:NO];
 }
 
@@ -999,7 +1002,9 @@ static void fixSize(NSView *view)
     _status.alignment = NSTextAlignmentRight;
     _status.textColor = NSColor.secondaryLabelColor;
     _status.lineBreakMode = NSLineBreakByTruncatingTail;
-    NSStackView *toolbar = hstack(@[_runBtn, step, over, outBtn, scan, frame, symbols, save, _status]);
+    NSButton *helpBtn = STUDIO2HelpButton(nil);
+    [helpBtn setRefusesFirstResponder:YES];
+    NSStackView *toolbar = hstack(@[_runBtn, step, over, outBtn, scan, frame, symbols, save, _status, helpBtn]);
     [_status setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
     [_status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                       forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -1009,8 +1014,12 @@ static void fixSize(NSView *view)
                         @[@"Disassembly", [self buildDisasm]], @[@"Video", [self buildVideo]],
                         @[@"Sound & I/O", [self buildSound]], @[@"Breakpoints", [self buildBreaks]],
                         @[@"Cart", [self buildCart]], @[@"FujiNet", [self buildFujinet]] ];
+    /* Help's contexts (studio2help.h), one per tab */
+    static NSString *const kHelpTabs[] = { @"prompt", @"cpu", @"disassembly", @"video", @"io",
+                                           @"breakpoints", @"cart", @"fujinet" };
+    NSUInteger pageIndex = 0;
     for (NSArray *page in pages) {
-        NSTabViewItem *item = [[NSTabViewItem alloc] initWithIdentifier:page[0]];
+        NSTabViewItem *item = [[NSTabViewItem alloc] initWithIdentifier:kHelpTabs[pageIndex++]];
         item.label = page[0];
         NSView *content = page[1];
         NSView *holder = [[NSView alloc] init];
@@ -1032,6 +1041,7 @@ static void fixSize(NSView *view)
         if (t >= 0 && t < (int)_tabs.numberOfTabViewItems) [_tabs selectTabViewItemAtIndex:t];
     }
     _tabs.delegate = self;
+    STUDIO2SetHelpContext(_window, [@"debugger/" stringByAppendingString:_tabs.selectedTabViewItem.identifier]);
 
     NSStackView *root = vstack(@[toolbar, _tabs]);
     root.edgeInsets = NSEdgeInsetsMake(8, 8, 8, 8);

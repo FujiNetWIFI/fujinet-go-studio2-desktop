@@ -34,6 +34,7 @@ add_executable(fujinet-go-studio2-gnome
   display.c
   prefs.c
   fujilog.c
+  help/help_window.c
   keypad/keypad_window.c
   debugger/dbg_window.c
 )

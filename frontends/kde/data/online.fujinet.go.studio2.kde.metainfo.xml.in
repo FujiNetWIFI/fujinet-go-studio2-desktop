@@ -26,7 +26,8 @@
       up as they are plugged in, and a native debugger is a key press away:
       a command prompt, the 1802's registers and the console RAM, a
       disassembly with breakpoints, the CDP1861's raster, the beeper and the
-      keypads as the console sees them, and the FujiNet cartridge.
+      keypads as the console sees them, and the FujiNet cartridge. Built-in,
+      searchable Help covers all of it.
     </p>
     <p>
       Nothing copyrighted is included. CONFIG and the FujiNet apps boot on

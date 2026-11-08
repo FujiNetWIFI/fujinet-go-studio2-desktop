@@ -51,6 +51,11 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
   cartridge restarts whatever it serves. **Reset to CONFIG** (Escape) is a
   power cycle — on the hardware only losing power brings CONFIG back — and
   ejects an opened cartridge.
+- **Built-in Help.** **Help ▸ FujiNet Go Studio II Help** (Ctrl+Shift+H, ⌘? on
+  a Mac) opens a searchable Help, and the Help buttons in Preferences, the
+  keypad window, the debugger and the console log open the topic for what they
+  show. The text is [data/help/help.md](data/help/help.md), which GitHub shows
+  as it is; the build embeds it and every frontend lays it out natively.
 - **The debugger, in every frontend.** F12 opens it and stops the machine:
   Run/Stop (F5), Step (F7), Step Over (F8: over a `SEP` call or an SCRT
   call), Step Out (Shift+F8), Scanline+1, Frame+1. Tabs: a Prompt (`help`,

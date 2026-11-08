@@ -5,13 +5,16 @@
  */
 
 #include "FujiNetWindows.h"
+#include "help/HelpWindow.h"
 
 #include <QColor>
 #include <QDesktopServices>
+#include <QDialogButtonBox>
 #include <QFont>
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QShortcut>
 #include <QScrollBar>
 #include <QTimer>
 #include <QUrl>
@@ -53,9 +56,18 @@ void fujinet_log_show(QWidget *parent, studio2session *session)
     mono.setStyleHint(QFont::TypeWriter);
     view->setFont(mono);
 
+    /* Help, and F1 for it */
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Help);
+    buttons->setContentsMargins(8, 0, 8, 8);
+    QWidget *w = win;
+    QObject::connect(buttons, &QDialogButtonBox::helpRequested, w, [w] { studio2HelpFor(w); });
+    new QShortcut(QKeySequence(Qt::Key_F1), w, [w] { studio2HelpFor(w); });
+    win->setProperty("studio2HelpContext", QStringLiteral("fujilog"));
+
     auto *layout = new QVBoxLayout(win);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(view);
+    layout->addWidget(buttons);
 
     auto *timer = new QTimer(win);
     auto refresh = [view, session]() {

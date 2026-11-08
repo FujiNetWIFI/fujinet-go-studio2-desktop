@@ -18,6 +18,10 @@ GtkWidget *studio2_window_new(AdwApplication *app, studio2session *session);
 /* main.c: the icon name to use (the installed id, or the in-tree art). */
 const char *studio2_icon_name(void);
 void studio2_window_toast(Studio2Window *self, const char *text);
+
+/* The Help context the main window shows now: "main", or "prefs/Machine"
+ * while Preferences is open. */
+const char *studio2_window_help_context(Studio2Window *self);
 /* The display's shape: 0 = the television's 4:3, 1 = square pixels. */
 void studio2_window_apply_aspect(Studio2Window *self, int aspect);
 /* A dropped or command-line file: a BIOS is imported, a cartridge opened,

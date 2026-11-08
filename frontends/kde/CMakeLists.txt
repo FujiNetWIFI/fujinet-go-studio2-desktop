@@ -25,6 +25,7 @@ add_executable(fujinet-go-studio2-kde
   KeyForward.cpp
   SettingsDialog.cpp
   FujiNetWindows.cpp
+  help/HelpWindow.cpp
   keypad/KeypadWindow.cpp
   debugger/DebuggerWindow.cpp
 )

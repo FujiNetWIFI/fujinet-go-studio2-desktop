@@ -17,6 +17,7 @@
 
 #include "../FujiNetWindows.h"
 #include "../KeyForward.h"
+#include "../help/HelpWindow.h"
 
 /* ---- PadButton ------------------------------------------------------------ */
 
@@ -77,6 +78,7 @@ KeypadWindow::KeypadWindow(studio2session *session, QWidget *parent)
                       | Qt::CustomizeWindowHint), m_session(session)
 {
     setWindowTitle(QStringLiteral("Keypad"));
+    setProperty("studio2HelpContext", QStringLiteral("keypad"));
     setFocusPolicy(Qt::StrongFocus);
 
     auto *root = new QVBoxLayout(this);
@@ -124,6 +126,7 @@ KeypadWindow::KeypadWindow(studio2session *session, QWidget *parent)
     maprow->addWidget(m_mapButton);
     maprow->addWidget(defaults);
     maprow->addWidget(m_hint, 1);
+    maprow->addWidget(studio2HelpButton(QStringLiteral("keypad")));
     root->addLayout(maprow);
 
     connect(&m_captureTimer, &QTimer::timeout, this, &KeypadWindow::pollCapture);

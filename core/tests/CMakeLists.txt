@@ -96,6 +96,10 @@ add_test(NAME session COMMAND session_test)
 set_tests_properties(session PROPERTIES TIMEOUT 120)
 
 # The remappable binding table and the keyboard translator, pure.
+# The built-in Help covers every setting, key and context.
+studio2_session_test(help_test help_test.c)
+add_test(NAME help COMMAND help_test)
+
 studio2_session_test(bindings_test bindings_test.c)
 add_test(NAME bindings COMMAND bindings_test)
 

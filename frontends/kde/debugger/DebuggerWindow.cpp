@@ -24,7 +24,9 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QShortcut>
 #include <QTabWidget>
+#include <QToolButton>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QToolTip>
@@ -34,6 +36,7 @@
 #include <cstring>
 
 #include "../FujiNetWindows.h"
+#include "../help/HelpWindow.h"
 
 #define DISASM_WINDOW 48
 
@@ -381,11 +384,25 @@ DebuggerWindow::DebuggerWindow(studio2session *session, QWidget *parent)
         }
         if (n >= 0 && n < tabs->count()) tabs->setCurrentIndex(n);
     }
-    connect(tabs, &QTabWidget::currentChanged, this, [this](int page) {
+    /* a Help button for the tab that shows, and F1 */
+    auto *help = qobject_cast<QToolButton *>(studio2HelpButton(QString()));
+    help->setAutoRaise(false);
+    help->setText(QStringLiteral("Help"));
+    help->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    tabs->setCornerWidget(help, Qt::TopRightCorner);
+    static const char *const kHelpTabs[] = { "prompt", "cpu", "disassembly", "video", "io", "breakpoints", "cart", "fujinet" };
+    auto setContext = [this](int page) {
+        if (page >= 0 && page < (int)(sizeof kHelpTabs / sizeof kHelpTabs[0]))
+            setProperty("studio2HelpContext", QStringLiteral("debugger/%1").arg(QLatin1String(kHelpTabs[page])));
+    };
+    new QShortcut(QKeySequence(Qt::Key_F1), this, [this] { studio2HelpFor(this); });
+    connect(tabs, &QTabWidget::currentChanged, this, [this, setContext](int page) {
+        setContext(page);
         if (page == kTabFujinet) refreshFujinet(false);
         /* the view is scaled to the room it has, known once it shows */
         if (page == kTabVideo) refreshVideo();
     });
+    setContext(tabs->currentIndex());
     root->addWidget(tabs, 1);
     setCentralWidget(central);
 
