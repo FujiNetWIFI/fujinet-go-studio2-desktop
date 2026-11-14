@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "studio2vidcap.h"
 #include "studio2vidtab.h"
 
 #define MAX_OVERLAYS 8
