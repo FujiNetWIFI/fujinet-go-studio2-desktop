@@ -743,26 +743,40 @@ int studio2vid_tab_can_break(const studio2vid_tab *tab)
     return tab && tab->dbg && pixp && pixp->valid && pixp->dma && pixp->src == STUDIO2VID_SRC_RAM;
 }
 
+/* A write breakpoint on one address, unless one already covers it; its id or -1. */
+static int write_break_at(studio2debug *dbg, unsigned addr)
+{
+    studio2debug_breakpoint list[128];
+    char cmd[32], out[256];
+    int count = studio2debug_breakpoint_list(dbg, list, 128);
+    for (int i = 0; i < count; i++)
+        if ((list[i].type & STUDIO2DEBUG_BP_WRITE) && list[i].start <= addr && list[i].end >= addr)
+            return list[i].id;
+    snprintf(cmd, sizeof cmd, "bpw $%04X", addr);
+    out[0] = '\0';
+    studio2debug_command(dbg, cmd, out, sizeof out);
+    count = studio2debug_breakpoint_list(dbg, list, 128);
+    for (int i = 0; i < count; i++)
+        if ((list[i].type & STUDIO2DEBUG_BP_WRITE) && list[i].start <= addr && list[i].end >= addr)
+            return list[i].id;
+    return -1;
+}
+
 int studio2vid_tab_break_on_pixel(studio2vid_tab *tab)
 {
     const studio2vid_pixel *pixp = studio2vid_tab_pixel(tab);
-    studio2debug_breakpoint list[128];
-    char cmd[32], out[256];
-    int count;
+    int first;
 
     if (!studio2vid_tab_can_break(tab)) return -1;
-    count = studio2debug_breakpoint_list(tab->dbg, list, 128);
-    for (int i = 0; i < count; i++)
-        if ((list[i].type & STUDIO2DEBUG_BP_WRITE) && list[i].start <= pixp->addr && list[i].end >= pixp->addr)
-            return list[i].id;
-    snprintf(cmd, sizeof cmd, "bpw $%04X", pixp->addr);
-    out[0] = '\0';
-    studio2debug_command(tab->dbg, cmd, out, sizeof out);
-    count = studio2debug_breakpoint_list(tab->dbg, list, 128);
-    for (int i = 0; i < count; i++)
-        if ((list[i].type & STUDIO2DEBUG_BP_WRITE) && list[i].start <= pixp->addr && list[i].end >= pixp->addr)
-            return list[i].id;
-    return -1;
+    first = write_break_at(tab->dbg, pixp->addr);
+    /* The 512 bytes of console RAM answer at $0800 and at its mirrors, and a
+     * breakpoint matches the address the program wrote: also catch the
+     * canonical one when the DMA read the byte through a mirror. */
+    {
+        unsigned canon = 0x0800u | (pixp->addr & 0x1FFu);
+        if (canon != pixp->addr) write_break_at(tab->dbg, canon);
+    }
+    return first;
 }
 
 /* ---- the tables ---------------------------------------------------------------------------- */
