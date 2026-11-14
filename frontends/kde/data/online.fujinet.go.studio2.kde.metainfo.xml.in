@@ -57,8 +57,8 @@
       <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.2.1/data/screenshots/kde/1_running_config.png</image>
     </screenshot>
     <screenshot>
-      <caption>The built-in debugger, showing FujiBus traffic</caption>
-      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.2.1/data/screenshots/kde/2_debugger.png</image>
+      <caption>The built-in debugger: the Video tab shows what the 1861 read for each line</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.7.0/data/screenshots/kde/2_debugger.png</image>
     </screenshot>
     <screenshot>
       <caption>Both keypads on screen</caption>
@@ -69,7 +69,17 @@
     <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
          it cannot disagree with the tree; past releases are literal. The
          release job checks that this first entry is still a template. -->
-    <release version="@PROJECT_VERSION@" date="2026-11-13">
+    <release version="@PROJECT_VERSION@" date="2026-11-14">
+      <description>
+        <p>
+          New debugger, the same as the other FujiNet Go desktops: twelve tabs (Console, Disassembly, Memory, Breakpoints, Watches, Cart &amp; I/O, Trace, History, Video, Sound, Symbols, FujiNet) with the 1802's registers under all of them; any tab can pop out into its own window. Breakpoints can be switched off and count their hits, write breakpoints say what was written and what it replaced, and Memory goes to ranges, searches and labels what answers where. Trace and History record every instruction. The Video tab shows what the 1861 read for each line of the picture and where it came from, and can stop on a write to it.
+        </p>
+        <p>
+          Keys: the arrow keys are keypad A's 2 4 6 8, and Ctrl and Return are its 5.
+        </p>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-11-13">
       <description>
         <p>
           The RCA Studio II BIOS is built in (it is in the public domain), so commercial games run without importing one. Import BIOS still replaces it with your own dump.
