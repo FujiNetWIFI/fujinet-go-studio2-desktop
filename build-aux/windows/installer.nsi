@@ -11,9 +11,8 @@
 ; staged folder that also becomes the portable zip -- so the two artifacts are
 ; the same bits, packaged twice. Ported from fujinet-go-astrocade-desktop's
 ; own installer.nsi via the ColecoVision and NES siblings, renamed for the
-; RCA Studio II. Nothing copyrighted is in the staged folder: CONFIG and the
-; FujiNet apps run on the app's own stand-in, and a user's own BIOS, which
-; games need, is imported at run time (COMPLIANCE.md).
+; RCA Studio II. The public-domain Studio II BIOS is compiled into the
+; executable (COMPLIANCE.md).
 ;
 ; makensis -DVERSION=x.y.z -DSRCDIR=<staged folder> -DOUTFILE=<exe> installer.nsi
 

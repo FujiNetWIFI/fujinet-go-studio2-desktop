@@ -2,23 +2,19 @@
  * roms -- the RCA Studio II BIOS: what MAME knows, what the user imported,
  * and what a developer build embedded.
  *
- * Only games need it. CONFIG and every FujiNet app boot on this app's own
- * stand-in (core/studio2/stub.asm); a commercial game is BIOS byte-code and
- * runs only on the real thing. The BIOS is copyrighted RCA firmware and this
- * project does not redistribute it (see COMPLIANCE.md): "Import BIOS..."
- * copies a user's own image into the ROM directory, recognised by size and
- * CRC-32 against MAME's ROM_START( studio2 ) (src/mame/rca/studio2.cpp) and
- * stored under MAME's file names.
+ * Only games need it. A commercial game is BIOS byte-code and runs only on
+ * the real thing; CONFIG and every FujiNet app also boot on this app's own
+ * stand-in (core/studio2/stub.asm). The BIOS is in the public domain
+ * (COMPLIANCE.md) and is compiled into every frontend (tools/roms/); a user's
+ * own dump overrides it: "Import BIOS..." copies an image into the ROM
+ * directory, recognised by size and CRC-32 against MAME's ROM_START( studio2 )
+ * (src/mame/rca/studio2.cpp) and stored under MAME's file names. A file there
+ * wins over the embedded image.
  *
  * MAME's set is four 512-byte ROMs: ic11 and ic12 are the system ROM the
  * console runs at $0000, ic13 and ic14 the built-in games at $0400, which
  * the FujiNet cart always hides. A dump of all four (2K, TOSEC's "RCA Studio
  * II BIOS"), of the system ROM alone (1K), or the ROMs one by one all work.
- *
- * WITH_STUDIO2_ROMS=ON embeds the recognised images a developer put in
- * tools/roms/; published builds are built with it OFF and
- * core/tests/no_embedded_roms.py checks that claim against the shipped
- * binaries.
  *
  * Copyright (C) 2026 Thomas Cherryhomes
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -163,16 +159,19 @@ int studio2session_bios_available(studio2session *s, int i)
 
     if (!b)
         return 0;
-    if (embedded(b))
-        return 1;
     rom_path(s, b, path, sizeof path);
     return stat(path, &st) == 0 && S_ISREG(st.st_mode) && (uint32_t)st.st_size == b->size;
 }
 
+/* The user's file, else the built-in image. */
+static int usable(studio2session *s, int i)
+{
+    return studio2session_bios_available(s, i) || embedded(&s_bios[i]) != NULL;
+}
+
 int studio2session_have_bios(studio2session *s)
 {
-    return studio2session_bios_available(s, B_SET) || studio2session_bios_available(s, B_SYSTEM)
-        || (studio2session_bios_available(s, B_IC11) && studio2session_bios_available(s, B_IC12));
+    return usable(s, B_SET) || usable(s, B_SYSTEM) || (usable(s, B_IC11) && usable(s, B_IC12));
 }
 
 uint8_t *roms_load_bios(struct studio2session *s, uint32_t *size)
@@ -214,28 +213,6 @@ uint8_t *roms_load_bios(struct studio2session *s, uint32_t *size)
     }
     *size = 0x800;
     return bios;
-}
-
-/* Materialise the embedded images into the ROM directory on first run, so a
- * developer build behaves like a configured install. */
-void roms_provision_embedded(struct studio2session *s)
-{
-    for (unsigned i = 0; i < studio2_embedded_rom_count; i++) {
-        char path[STUDIO2_PATH_MAX];
-        FILE *f;
-
-        snprintf(path, sizeof path, "%s/%s", s->roms_dir, studio2_embedded_roms[i].file);
-        f = fopen(path, "rb");
-        if (f) {
-            fclose(f);   /* the user's own copy wins */
-            continue;
-        }
-        f = fopen(path, "wb");
-        if (!f)
-            continue;
-        fwrite(studio2_embedded_roms[i].data, 1, studio2_embedded_roms[i].size, f);
-        fclose(f);
-    }
 }
 
 int studio2session_media_is_bios(const char *path)

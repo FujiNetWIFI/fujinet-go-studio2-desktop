@@ -1,12 +1,6 @@
 # tools/roms
 
-Developer-only. Drop your own RCA Studio II BIOS here (MAME's `studio2.zip`
-ROMs `84932.ic11` … `85457.ic14`, or the joined 2K dump) to:
-
-- build with `-DWITH_STUDIO2_ROMS=ON`, which embeds the recognised images so a
-  development build has a BIOS from the first start (NOT for redistribution);
-- give the `no_embedded_roms_*` tests something to probe for, so they check
-  rather than skip.
-
-Everything here except `embed-roms.py` and this file is git-ignored. See
-COMPLIANCE.md.
+The RCA Studio II BIOS, MAME's four ROMs (`84932.ic11`, `84933.ic12`,
+`85456.ic13`, `85457.ic14`). It is in the public domain (COMPLIANCE.md) and
+`embed-roms.py` compiles it into every frontend. Other files here are ignored
+by the embedder and by git.

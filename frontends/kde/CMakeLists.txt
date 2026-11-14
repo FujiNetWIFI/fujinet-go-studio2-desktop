@@ -29,7 +29,7 @@ add_executable(fujinet-go-studio2-kde
   keypad/KeypadWindow.cpp
   debugger/DebuggerWindow.cpp
 )
-target_link_libraries(fujinet-go-studio2-kde PRIVATE studio2_session Qt6::Widgets Qt6::GuiPrivate)
+target_link_libraries(fujinet-go-studio2-kde PRIVATE studio2_session studio2_bios_full Qt6::Widgets Qt6::GuiPrivate)
 # The display's shaders, baked for every backend and embedded as resources.
 qt_add_shaders(fujinet-go-studio2-kde "display_shaders"
   PREFIX "/"

@@ -39,7 +39,7 @@ static const struct {
     const char *context;
     const char *labels[10];
 } pages[] = {
-    { "preferences", { "BIOS", "Use the imported BIOS", "Aspect", "Smooth scaling", "Enable audio", "Volume",
+    { "preferences", { "BIOS", "Use the BIOS", "Aspect", "Smooth scaling", "Enable audio", "Volume",
                        "Enable gamepads", "Analog sticks steer too", NULL } },
     { "preferences", { "Gamepads", "Automatic", "Enable FujiNet", "Use external FujiNet", "Address", NULL } },
 };

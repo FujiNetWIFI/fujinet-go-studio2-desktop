@@ -93,7 +93,6 @@ studio2session *studio2session_new(const studio2session_paths *paths)
     }
     settings_init(s);
     bindings_init(s);
-    roms_provision_embedded(s);
 
     if (paths && paths->fujinet_lib) {
         snprintf(s->fujinet_lib, sizeof s->fujinet_lib, "%s", paths->fujinet_lib);

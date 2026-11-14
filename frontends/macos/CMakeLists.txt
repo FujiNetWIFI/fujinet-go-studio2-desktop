@@ -46,7 +46,7 @@ set_target_properties(fujinet-go-studio2-macos PROPERTIES
 
 target_include_directories(fujinet-go-studio2-macos PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(fujinet-go-studio2-macos PRIVATE studio2_session
+target_link_libraries(fujinet-go-studio2-macos PRIVATE studio2_session studio2_bios_full
   "-framework Cocoa"
   "-framework CoreVideo"    # CVDisplayLink: this platform's frame clock
   "-framework CoreGraphics"

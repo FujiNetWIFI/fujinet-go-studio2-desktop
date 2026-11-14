@@ -529,7 +529,7 @@ static void refresh_io(debugger *d)
         "\nINP 1           %u   (display-on strobes)\n"
         "BIOS            %s\n\n",
         io->inp1_count,
-        io->have_bios ? "imported" : io->stub_parked ? "the stand-in, parked: a game needs the BIOS"
+        io->have_bios ? "the real BIOS runs" : io->stub_parked ? "the stand-in, parked: a game needs the BIOS"
                                                      : "the stand-in (CONFIG and FujiNet apps)");
     for (k = 0; k < 2; k++) {
         len = addf(s, len, sizeof s, "Keypad %c held  ", 'A' + k);

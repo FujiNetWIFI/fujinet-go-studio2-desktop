@@ -85,7 +85,7 @@ void        studio2session_settings_flush(studio2session *s);
 /* ---- lifecycle ------------------------------------------------------------ */
 typedef struct {
     const char *cart_path;    /* cartridge image; NULL boots the CONFIG client */
-    int use_bios;             /* run the imported BIOS when there is one (else
+    int use_bios;             /* run the BIOS (the built-in or an imported one) (else
                                  the stand-in, which runs FujiNet apps only) */
     int analog_joystick;      /* gamepad sticks drive the directions too */
     int enable_fujinet;       /* start the in-process FujiNet runtime */
@@ -363,9 +363,10 @@ typedef struct {
 
 int studio2session_bios_count(void);
 const studio2_bios_info *studio2session_bios_info(int i);
-/* 1 if image i is in the ROM directory. */
+/* 1 if the user imported image i (it is in the ROM directory). */
 int studio2session_bios_available(studio2session *s, int i);
-/* 1 if the console's system ROM can be assembled from what is imported. */
+/* 1 if the console's system ROM can be assembled from what is imported or
+ * built in (the public-domain BIOS compiled into the frontends). */
 int studio2session_have_bios(studio2session *s);
 /* Import a BIOS image. Returns its index (>= 0), or -1 with the error. A 2K
  * or 1K image whose CRC is not in the table is imported as the 2K set with

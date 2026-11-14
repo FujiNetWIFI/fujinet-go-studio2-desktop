@@ -109,9 +109,6 @@ void fujinet_stop(struct studio2session *s);
 int  fujinet_wait_for_boip(struct studio2session *s, int timeout_ms);
 
 /* roms.c */
-/* Write any images compiled in with WITH_STUDIO2_ROMS into the ROM directory
- * (once; an existing file is left alone). */
-void roms_provision_embedded(struct studio2session *s);
 /* The BIOS as the console maps it ($0000-$07FF), assembled from what is
  * imported: the 2K set, or its ROMs (ic11 and ic12 at least); a malloc'd
  * buffer (caller frees) and its size, or NULL when there is none. */

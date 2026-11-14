@@ -13,7 +13,7 @@ name: Windows
 # this platform (ws2_32, wired into the core CMakeLists); the core's threads
 # are winpthreads. Not exercised on real Windows, only under Wine.
 #
-# -DWITH_STUDIO2_ROMS=OFF, as every published build. WITH_FUJINET is left at
+# WITH_FUJINET is left at
 # its default ON to prove the runtime cross-builds here.
 
 on:
@@ -72,8 +72,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$P/toolchain.cmake" \
             -DCMAKE_PREFIX_PATH="$P" \
-            -DCMAKE_CROSSCOMPILING_EMULATOR=wine \
-            -DWITH_STUDIO2_ROMS=OFF
+            -DCMAKE_CROSSCOMPILING_EMULATOR=wine
 
       - name: Build
         run: cmake --build build

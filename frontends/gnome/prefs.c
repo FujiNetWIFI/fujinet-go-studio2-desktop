@@ -92,12 +92,15 @@ static void refresh_bios_row(PrefsState *state)
         text = "Imported (2K set)";
     else if (studio2session_bios_available(s, BIOS_SYSTEM))
         text = "Imported (1K system ROM)";
-    else if (studio2session_have_bios(s))
+    else if (studio2session_bios_available(s, BIOS_IC11) &&
+             studio2session_bios_available(s, BIOS_IC12))
         text = "Imported (MAME's ic11 and ic12)";
     else if (studio2session_bios_available(s, BIOS_IC11))
         text = "Half imported \xe2\x80\x94 ic11 is here; import 84933.ic12 too";
     else if (studio2session_bios_available(s, BIOS_IC12))
         text = "Half imported \xe2\x80\x94 ic12 is here; import 84932.ic11 too";
+    else if (studio2session_have_bios(s))
+        text = "Built in \xe2\x80\x94 the RCA BIOS, public domain (Import BIOS overrides it)";
     else
         text = "Not imported \xe2\x80\x94 CONFIG and FujiNet apps run without it; "
                "games need it";
@@ -408,7 +411,7 @@ void studio2_prefs_show(Studio2Window *parent, studio2session *session,
     adw_preferences_group_add(machine, state->bios_row);
     refresh_bios_row(state);
     adw_preferences_group_add(machine,
-        switch_row(state, "Use the imported BIOS",
+        switch_row(state, "Use the BIOS",
                    "Off: the app's own stand-in runs instead. It boots CONFIG and "
                    "FujiNet apps, not games", "use_bios", 1, 0));
 

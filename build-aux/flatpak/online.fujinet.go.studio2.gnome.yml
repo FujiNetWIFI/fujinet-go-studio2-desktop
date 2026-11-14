@@ -12,9 +12,8 @@
 # flatpak build never depends on a working checkout's state. The emulator core
 # (MAME's RCA Studio II, CDP1802 and CDP1861, transposed to C) is in the tree.
 #
-# -DWITH_STUDIO2_ROMS=OFF, as every published build: nothing copyrighted is
-# embedded. CONFIG and FujiNet apps boot on the app's own stand-in; a user's
-# own BIOS, which games need, is imported at run time (see COMPLIANCE.md).
+# The public-domain Studio II BIOS (tools/roms) is embedded in the app (see
+# COMPLIANCE.md); a user's own dump can still be imported over it.
 #
 # Build + install + run:
 #   flatpak-builder --user --install --force-clean build-flatpak \
@@ -85,7 +84,6 @@ modules:
         PYTHONPATH: /app/fujinet-pyshims
     config-opts:
       - -DFRONTEND=gnome
-      - -DWITH_STUDIO2_ROMS=OFF
     sources:
       - type: dir
         path: ../..
@@ -111,10 +109,8 @@ modules:
           # The cartridge firmware's sources as staged at configure time
           # (cmake/StageFujiProto.cmake): regenerated from the pinned source.
           - core/studio2/fuji-generated
-          # (tools/roms is NOT skipped: embed-roms.py there is source. A
-          # developer's own BIOS images beside it are copied in but never
-          # embedded -- WITH_STUDIO2_ROMS is OFF above, which the build's
-          # no_embedded_roms checks hold it to.)
+          # (tools/roms is NOT skipped: the BIOS images and embed-roms.py
+          # there are source.)
       # Pinned exactly as cmake/Dependencies.cmake (FUJINET_COMMIT, PR
       # #2187's head + the BoIP idle-wait fix, PR #2247, on the tschak909 fork;
       # temporary). A git source can't take a commit on no branch, so this

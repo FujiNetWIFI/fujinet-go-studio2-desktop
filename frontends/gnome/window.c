@@ -383,9 +383,9 @@ static void show_bios_needed(Studio2Window *self, const char *retry)
     AdwDialog *dlg;
 
     if (studio2session_have_bios(self->session)) {
-        /* imported, but switched off: importing again would not help */
+        /* present, but switched off: importing again would not help */
         show_message(GTK_WIDGET(self), "This cartridge needs the RCA Studio II BIOS",
-            "A BIOS is imported, but Preferences has \xe2\x80\x9cUse the imported "
+            "The BIOS is here, but Preferences has \xe2\x80\x9cUse the "
             "BIOS\xe2\x80\x9d switched off, so the app's stand-in is running. It runs "
             "CONFIG and FujiNet apps, not games.");
         return;

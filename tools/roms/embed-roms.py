@@ -2,13 +2,11 @@
 """Generate roms_embedded.c: the recognised BIOS images in a directory, or
 nothing at all.
 
-The RCA Studio II BIOS is copyrighted RCA firmware and is not redistributed
-by this project (COMPLIANCE.md). --none is therefore the SHIPPING
-configuration, not an error path: it emits an empty table, and the machine
-boots CONFIG on the app's own stand-in.
+The RCA Studio II BIOS is in the public domain (COMPLIANCE.md) and the
+frontends embed it. --none emits an empty table, which the tests link so that
+their own BIOSes and the stand-in are what they exercise.
 
-With a directory (WITH_STUDIO2_ROMS=ON, a developer build), every file in it
-whose size and CRC-32 match MAME's table (core/src/roms.c) is embedded under
+With a directory, every file in it whose size and CRC-32 match MAME's table (core/src/roms.c) is embedded under
 MAME's file name, whatever it is called locally. Anything else is ignored.
 
 usage: embed-roms.py <out.c> <dir>
@@ -44,7 +42,7 @@ def main():
             sys.exit(__doc__)
         Path(args[1]).write_text(
             HEADER
-            + "/* Nothing embedded -- the shipping configuration. */\n"
+            + "/* Nothing embedded -- the tests' configuration. */\n"
             + "const studio2_embedded_rom studio2_embedded_roms[1] = { { 0, 0, 0 } };\n"
             + "const unsigned studio2_embedded_rom_count = 0;\n")
         return 0
@@ -62,8 +60,7 @@ def main():
             found[name] = data
 
     body = [HEADER,
-            "/* WITH_STUDIO2_ROMS=ON: a developer build. NOT redistributable.\n"
-            " * See COMPLIANCE.md. */\n"]
+            "/* The RCA Studio II BIOS, public domain. See COMPLIANCE.md. */\n"]
     for i, (name, data) in enumerate(found.items()):
         body.append("static const uint8_t rom%d[%d] = {\n" % (i, len(data)))
         for j in range(0, len(data), 16):

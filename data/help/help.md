@@ -212,19 +212,21 @@ There is one machine: the RCA Studio II, NTSC, with the CDP1802 COSMAC at
 
 # BIOS and ROMs
 
-The console's BIOS is copyrighted, so none comes with the app. CONFIG and every
-FujiNet app need none; commercial games are BIOS byte-code and do.
+The console's BIOS is built into the app (it is in the public domain), so
+commercial games, which are BIOS byte-code, run out of the box. CONFIG and every
+FujiNet app need no BIOS at all.
 
 ## The stand-in
 
-CONFIG and every FujiNet app boot on the app's own 92-byte stand-in: it clears
-RAM, turns the display on and enters the app at `$0402`, as the BIOS would.
+With **Use the BIOS** off, CONFIG and every FujiNet app boot on the app's own
+92-byte stand-in: it clears RAM, turns the display on and enters the app at
+`$0402`, as the BIOS would. Games do not run on it.
 
 ## Importing it
 
 **Import BIOS…** (in the Machine menu, on the Machine page of Preferences, and
-in the Needs BIOS message) takes your own dump: MAME's 2K set, the 1K system
-ROM, or the four 512-byte ROMs. Each is identified by its size and CRC-32,
+in the Needs BIOS message) takes your own dump in place of the built-in one:
+MAME's 2K set, the 1K system ROM, or the four 512-byte ROMs. Each is identified by its size and CRC-32,
 whatever it is called. Dropping the file on the window does the same. Imported
 files are copied into the app's `roms` folder (see
 [Files and folders](#files-and-folders)).
@@ -232,9 +234,9 @@ files are copied into the app's `roms` folder (see
 <!-- context: nobios -->
 ## Needing the BIOS
 
-A game opened, or booted from CONFIG, with no BIOS says so, and offers **Import
-BIOS…**. If Preferences ▸ Machine ▸ **Use the imported BIOS** is off, the
-stand-in runs instead, which boots CONFIG and FujiNet apps, not games.
+A game opened, or booted from CONFIG, while Preferences ▸ Machine ▸ **Use the
+BIOS** is off says so: the stand-in runs instead, which boots CONFIG and FujiNet
+apps, not games. Turn the switch on and reset to CONFIG.
 
 # Cartridges
 
@@ -345,9 +347,8 @@ On Windows this window is called **Settings** (in the Machine menu).
 <!-- context: prefs/Machine -->
 ## Machine settings
 
-- **BIOS**: whether the console's BIOS is imported, with an **Import BIOS…**
-  button.
-- **Use the imported BIOS**: off, the app's own stand-in runs instead. It boots
+- **BIOS**: built in or imported, with an **Import BIOS…** button.
+- **Use the BIOS**: off, the app's own stand-in runs instead. It boots
   CONFIG and FujiNet apps, not games (setting `use_bios`).
 
 ## Display settings

@@ -25,10 +25,8 @@ name: Release
 # downloaded build's About box can never disagree with the download it came
 # from. The check-version job below enforces that.
 #
-# Nothing copyrighted is embedded in any artifact: every configure below
-# passes -DWITH_STUDIO2_ROMS=OFF (CONFIG and FujiNet apps boot on the app's own
-# stand-in; a user's own BIOS is imported at run time), and the no_embedded_roms
-# ctests run against each frontend binary (see COMPLIANCE.md).
+# Every frontend embeds the public-domain Studio II BIOS (tools/roms), and the
+# bios_embedded ctests check each frontend binary for it (see COMPLIANCE.md).
 
 on:
   push:
@@ -155,8 +153,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_PREFIX_PATH=/tmp/sdl3-install \
             -DCMAKE_INSTALL_PREFIX=/usr \
-            -DFRONTEND=${{ matrix.frontend }} \
-            -DWITH_STUDIO2_ROMS=OFF
+            -DFRONTEND=${{ matrix.frontend }}
 
       - name: Build
         run: cmake --build build
@@ -299,8 +296,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$P/toolchain.cmake" \
             -DCMAKE_PREFIX_PATH="$P" \
-            -DCMAKE_CROSSCOMPILING_EMULATOR=wine \
-            -DWITH_STUDIO2_ROMS=OFF
+            -DCMAKE_CROSSCOMPILING_EMULATOR=wine
 
       - name: Build
         run: cmake --build build
@@ -448,7 +444,7 @@ jobs:
           echo "CMAKE_PREFIX_PATH=$RUNNER_TEMP/sdl3" >> "$GITHUB_ENV"
 
       - name: Configure
-        run: cmake -B build -G Ninja -DWITH_STUDIO2_ROMS=OFF
+        run: cmake -B build -G Ninja
 
       - name: Build
         run: cmake --build build

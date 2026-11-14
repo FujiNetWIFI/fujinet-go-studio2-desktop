@@ -62,13 +62,14 @@ bool imported(studio2session *s, const char *name)
  * ic12), which the 2K set, the 1K dump or the two ROMs one by one supply. */
 QString biosStatus(studio2session *s)
 {
-    if (studio2session_have_bios(s)) {
-        if (imported(s, "studio2")) return QStringLiteral("Imported (2K set)");
-        if (imported(s, "system")) return QStringLiteral("Imported (1K system ROM)");
+    if (imported(s, "studio2")) return QStringLiteral("Imported (2K set)");
+    if (imported(s, "system")) return QStringLiteral("Imported (1K system ROM)");
+    if (imported(s, "84932.ic11") && imported(s, "84933.ic12"))
         return QStringLiteral("Imported (ROMs ic11 and ic12)");
-    }
     if (imported(s, "84932.ic11") || imported(s, "84933.ic12"))
         return QStringLiteral("Incomplete — the console needs both ic11 and ic12; import the other");
+    if (studio2session_have_bios(s))
+        return QStringLiteral("Built in — the RCA BIOS, public domain (Import BIOS overrides it)");
     return QStringLiteral("Not imported — CONFIG and FujiNet apps run without it; games need it");
 }
 
@@ -115,7 +116,7 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     biosRow->addWidget(biosLabel, 1);
     biosRow->addWidget(importBtn);
     mform->addRow(QStringLiteral("BIOS"), biosRow);
-    QCheckBox *useBios = check("Use the imported BIOS",
+    QCheckBox *useBios = check("Use the BIOS",
                                "Off always boots the stand-in, which runs CONFIG and the FujiNet "
                                "apps but no games", session, "use_bios", 1);
     mform->addRow(useBios);

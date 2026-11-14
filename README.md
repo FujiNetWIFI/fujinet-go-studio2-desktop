@@ -12,7 +12,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
 | | |
 |---|---|
 | **Emulator** | MAME's RCA Studio II (`studio2.cpp`), its CDP1802 COSMAC (`cosmac.cpp`), its CDP1861 Pixie (`cdp1861.cpp`) and its beeper, transposed to C — the astrocade and SMS siblings' way. Frame for frame pixel-identical to MAME, keys included (`tools/ab/`). |
-| **Machine** | The RCA Studio II (NTSC, 1.76 MHz, 59.98 Hz), two 10-key keypads and CLEAR. No BIOS needed for CONFIG or FujiNet apps. |
+| **Machine** | The RCA Studio II (NTSC, 1.76 MHz, 59.98 Hz), two 10-key keypads and CLEAR. The RCA BIOS is built in. |
 | **Cartridge** | The FujiNet Studio II cartridge (`fujinet-firmware` `pico/studio2` on `pico/common`): it sees every console read — display DMA included — and claims whole pages outside the BIOS, serving the 64×128 raster the 1861 fetches and a 16×10 text engine drawn into it, the mailbox at `$E400`, and up to 48K of image (an ST2 with a bank window at `$C400`, or raw), CONFIG baked in. It speaks protocol 2: pages the program can write (a poke stream, COPY) and a graphics layer — pictures stamped at any pixel, rectangles, 16 sprites, the view shaken or inverted — composed into a double-buffered display, and drawn even while a FujiNet transaction is out. M.U.L.E. runs on it. Its protocol (`fujimail`), wire codec (`fujibus`), image planner (`s2map`), staging and swap (`fuji_load`) and text engine (`s2_text`) are the cartridge firmware's own sources, staged verbatim. |
 | **FujiNet** | The firmware's `RS232` PC target, built in-process as `libfujinet` and dialled by the cartridge over loopback (BoIP on **11518**, web admin on **11519**). |
 | **Frontends** | GNOME (GTK4/libadwaita), KDE (Qt6 Widgets), macOS (AppKit), Windows (Win32/GDI) — each with the display, a Keypad window, Preferences, a live FujiNet console log, and a debugger. |
@@ -32,15 +32,14 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
   image of up to 1K at `$0400`. An image it cannot plan is refused with the
   reason. A program that carries the `FUJI` claim at `$07FC` keeps the
   mailbox and the text engine; a game runs alone.
-- **No BIOS needed for FujiNet.** The console runs the RCA BIOS at `$0000`,
-  but CONFIG and every FujiNet app boot on this app's own 92-byte stand-in
-  (`core/studio2/stub.asm`): it clears RAM, turns the display on and enters
-  the app at `$0402` as the BIOS would. Commercial games are BIOS byte-code
-  and need the real thing: **Import BIOS…** takes your own dump (MAME's 2K
-  set, the 1K system ROM, or the four 512-byte ROMs, identified by size and
-  CRC). A game opened, or booted from CONFIG, with no BIOS says so and
-  offers Import BIOS. Nothing copyrighted ships with the app
-  (`COMPLIANCE.md`).
+- **The BIOS is built in.** The console runs the RCA BIOS at `$0000`; it is in
+  the public domain and compiled into every frontend (`tools/roms/`,
+  `COMPLIANCE.md`), so commercial games, which are BIOS byte-code, run out of
+  the box. **Import BIOS…** takes your own dump (MAME's 2K set, the 1K system
+  ROM, or the four 512-byte ROMs, identified by size and CRC) and uses it in
+  its place. With Preferences' **Use the BIOS** off, CONFIG and every FujiNet
+  app boot on this app's own 92-byte stand-in (`core/studio2/stub.asm`) and a
+  game asks for the BIOS.
 - **Open Cartridge…** serves a local `.st2`/`.bin` from power-on in place of
   CONFIG (and remembers it for the next start). **Import Cartridge to SD…**
   copies one into FujiNet's SD root, where CONFIG lists it. Dropping a file
@@ -104,8 +103,7 @@ cmake -B build -DFUJINET_SRC=~/Workspace/fujinet-firmware
 
 `-DFRONTEND=none` builds just the core and its tests; `-DWITH_FUJINET=OFF`
 skips the firmware build (the machine boots CONFIG reporting the link down).
-`-DWITH_STUDIO2_ROMS=ON` embeds whatever BIOS images are in `tools/roms/` for
-local development; it is off by default and in every published build.
+The BIOS in `tools/roms/` is always embedded in the frontends.
 
 The core is C11. The macOS bundle needs macOS 13.3 or later.
 

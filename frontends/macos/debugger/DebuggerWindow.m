@@ -1418,7 +1418,7 @@ static void fixSize(NSView *view)
     [s appendString:@"Last OUT    "];
     for (int p = 1; p < 8; p++) [s appendFormat:@" %d=$%02X", p, io.last_out[p]];
     [s appendFormat:@"\nINP 1        %u times (display on)\n", io.inp1_count];
-    [s appendFormat:@"BIOS         %s\n", io.have_bios ? "imported"
+    [s appendFormat:@"BIOS         %s\n", io.have_bios ? "the real BIOS runs"
                     : (io.stub_parked ? "the stand-in, parked: a game needs the BIOS"
                                       : "the stand-in (runs CONFIG and FujiNet apps)")];
     setTextKeepingPlace(_sound, s);

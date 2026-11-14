@@ -36,10 +36,10 @@
       searchable Help covers all of it.
     </p>
     <p>
-      Nothing copyrighted is included. CONFIG and FujiNet programs run on the
-      application's own stand-in for the BIOS; Studio II games are written in
-      the BIOS's own byte-code, so they need your own copy of the RCA BIOS,
-      added with Import BIOS.
+      The console's BIOS, which is in the public domain, is built in, so
+      Studio II games run out of the box; CONFIG and FujiNet programs also
+      run on the application's own stand-in when you turn the BIOS off.
+      Import BIOS replaces it with a dump of your own.
     </p>
   </description>
   <launchable type="desktop-id">online.fujinet.go.studio2.gnome.desktop</launchable>
@@ -76,6 +76,13 @@
          it cannot disagree with the tree; past releases are literal. The
          release job checks that this first entry is still a template. -->
     <release version="@PROJECT_VERSION@" date="2026-11-13">
+      <description>
+        <p>
+          The RCA Studio II BIOS is built in (it is in the public domain), so commercial games run without importing one. Import BIOS still replaces it with your own dump.
+        </p>
+      </description>
+    </release>
+    <release version="0.5.1" date="2026-11-13">
       <description>
         <p>
           Fixed a crash when quitting the app on macOS.

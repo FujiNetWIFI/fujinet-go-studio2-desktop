@@ -465,6 +465,9 @@ static void bios_status_text(char *out, int outsz)
     else if (ic11 || ic12)
         snprintf(out, (size_t)outsz, "Partly imported \xe2\x80\x94 the console needs both "
                                      "84932.ic11 and 84933.ic12");
+    else if (studio2session_have_bios(g_session))
+        snprintf(out, (size_t)outsz, "Built in \xe2\x80\x94 the RCA BIOS, public domain "
+                                     "(Import BIOS overrides it)");
     else
         snprintf(out, (size_t)outsz, "Not imported \xe2\x80\x94 CONFIG and FujiNet apps run without it; "
                                      "games need it");
@@ -716,7 +719,7 @@ static void show_settings(HINSTANCE inst)
     settings_bios_imported();
     settings_button(g_settings_window, inst, "Import BIOS...", IDC_SET_IMPORT_BIOS, 352, y + 2, 100);
     y += 38;
-    settings_checkbox(g_settings_window, inst, "Use the imported BIOS (off: always the stand-in)", IDC_SET_USE_BIOS,
+    settings_checkbox(g_settings_window, inst, "Use the BIOS (off: always the stand-in)", IDC_SET_USE_BIOS,
                       80, y, 370, studio2session_get_int(g_session, "use_bios", 1));
     y += 34;
 

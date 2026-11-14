@@ -16,7 +16,7 @@ name: macOS
 # cannot run on this runner; the tests exercise the x86_64 slice. There is no
 # separate Intel leg any more.
 #
-# -DWITH_STUDIO2_ROMS=OFF, as every published build. WITH_FUJINET is left at its
+# WITH_FUJINET is left at its
 # default ON: tools/fujinet/build-fujinet-desktop.sh has Darwin handling
 # (libfujinet.dylib, and it builds mbedTLS 3.6.5 from source because the
 # runner has no usable system copy).
@@ -106,8 +106,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DWITH_STUDIO2_ROMS=OFF
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
       - name: Build
         run: cmake --build build

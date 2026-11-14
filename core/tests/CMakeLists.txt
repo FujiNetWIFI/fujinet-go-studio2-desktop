@@ -71,7 +71,8 @@ if(TARGET studio2_session)
 
 function(studio2_session_test name)
   add_executable(${name} ${ARGN})
-  target_link_libraries(${name} PRIVATE studio2_session)
+  # The tests embed no BIOS: their goldens run a BIOS of their own.
+  target_link_libraries(${name} PRIVATE studio2_session studio2_bios_none)
   target_include_directories(${name} PRIVATE "${CMAKE_SOURCE_DIR}/core/src"
     "${CMAKE_SOURCE_DIR}/core/debugger")
   target_compile_definitions(${name} PRIVATE _GNU_SOURCE _DEFAULT_SOURCE
@@ -102,6 +103,19 @@ add_test(NAME help COMMAND help_test)
 
 studio2_session_test(bindings_test bindings_test.c)
 add_test(NAME bindings COMMAND bindings_test)
+
+# The frontends' configuration: the built-in BIOS (studio2_bios_full) in use.
+add_executable(bios_builtin_test bios_builtin_test.c)
+target_link_libraries(bios_builtin_test PRIVATE studio2_session studio2_bios_full)
+target_include_directories(bios_builtin_test PRIVATE "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_SOURCE_DIR}/core/debugger")
+target_compile_definitions(bios_builtin_test PRIVATE _GNU_SOURCE _DEFAULT_SOURCE)
+set_target_properties(bios_builtin_test PROPERTIES C_STANDARD 11)
+if(WIN32)
+  target_link_options(bios_builtin_test PRIVATE -static)
+endif()
+add_test(NAME bios_builtin COMMAND bios_builtin_test)
+set_tests_properties(bios_builtin PROPERTIES TIMEOUT 60)
 
 # Where a dropped file goes, Import Cartridge to SD, and Import BIOS
 # (identified by size and CRC; no RCA firmware involved).

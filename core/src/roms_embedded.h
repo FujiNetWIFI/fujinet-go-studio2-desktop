@@ -1,8 +1,8 @@
 /*
  * roms_embedded -- the table tools/roms/embed-roms.py generates into the
- * build tree: empty (the shipping configuration, WITH_STUDIO2_ROMS=OFF) or the
- * recognised images a developer put in tools/roms/ (NOT redistributable;
- * see COMPLIANCE.md).
+ * build tree: the recognised images in tools/roms/ (the frontends; public
+ * domain, COMPLIANCE.md) or an empty table (the tests, which run BIOSes of
+ * their own).
  *
  * Copyright (C) 2026 Thomas Cherryhomes
  * SPDX-License-Identifier: GPL-3.0-or-later

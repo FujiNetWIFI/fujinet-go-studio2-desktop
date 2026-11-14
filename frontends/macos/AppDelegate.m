@@ -784,15 +784,17 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
 {
     if (!studio2session_have_bios(_session))
         return @"Not imported — CONFIG and FujiNet apps run without it; games need it";
-    BOOL set2k = NO, system1k = NO;
+    BOOL any = NO, set2k = NO, system1k = NO;
     for (int i = 0; i < studio2session_bios_count(); i++) {
         const studio2_bios_info *b = studio2session_bios_info(i);
         if (!b || !studio2session_bios_available(_session, i)) continue;
+        any = YES;
         if (!strcmp(b->name, "studio2")) set2k = YES;
         else if (!strcmp(b->name, "system")) system1k = YES;
     }
     if (set2k) return @"Imported (2K set)";
     if (system1k) return @"Imported (1K system ROM)";
+    if (!any) return @"Built in — the RCA BIOS, public domain (Import BIOS overrides it)";
     return @"Imported (MAME's 512-byte ROMs)";
 }
 
@@ -949,7 +951,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
         @[ [self sectionLabel:@"Machine"], [self note:@"the BIOS applies with a power cycle when this window closes"] ],
         @[ [NSTextField labelWithString:@"BIOS"], biosRow ],
         @[ [NSTextField labelWithString:@""],
-           [self checkBoxForKey:"use_bios" title:@"Use the imported BIOS" fallback:1] ],
+           [self checkBoxForKey:"use_bios" title:@"Use the BIOS" fallback:1] ],
         @[ [NSTextField labelWithString:@""],
            [self note:@"off: the app's own stand-in always, which runs CONFIG and FujiNet apps but no games"] ],
         @[ [self sectionLabel:@"Display"], [self note:@"applied immediately"] ],

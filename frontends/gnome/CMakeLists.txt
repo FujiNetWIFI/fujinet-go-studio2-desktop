@@ -39,7 +39,7 @@ add_executable(fujinet-go-studio2-gnome
   debugger/dbg_window.c
 )
 target_link_libraries(fujinet-go-studio2-gnome
-  PRIVATE studio2_session PkgConfig::GTK4 PkgConfig::ADW)
+  PRIVATE studio2_session studio2_bios_full PkgConfig::GTK4 PkgConfig::ADW)
 target_compile_options(fujinet-go-studio2-gnome PRIVATE -Wall -Wextra)
 # Where the in-tree icon theme lives, for running uninstalled (see main.c).
 target_compile_definitions(fujinet-go-studio2-gnome PRIVATE

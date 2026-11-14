@@ -5,7 +5,6 @@ name: Flatpak
 # declare is simply absent. The one dependency (fujinet-firmware), SDL3,
 # mbedTLS 3.6.5 and the python wheels the FujiNet web-UI build needs are all
 # declared sources, pinned to the same commits cmake/Dependencies.cmake uses.
-# Both manifests configure with -DWITH_STUDIO2_ROMS=OFF.
 #
 # Both manifests build the full FujiNet runtime, so this is also the job that
 # proves libfujinet still builds from a clean tree.

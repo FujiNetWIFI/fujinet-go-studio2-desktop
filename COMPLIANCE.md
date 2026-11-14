@@ -11,7 +11,7 @@ first public build, in the family tradition (see
 |---|---|---|---|
 | This application | this repository | GPL-3.0-or-later | — |
 | **The Studio II core** (`core/studio2/machine.c`, `cpu1802.c`, `cdp1861.c`, `dasm1802.c`) | transposed to C from MAME: `src/mame/rca/studio2.cpp`, `src/devices/cpu/cosmac/cosmac.cpp/.h`, `src/devices/cpu/cosmac/cosdasm.cpp`, `src/devices/video/cdp1861.cpp/.h`, `src/devices/sound/beep.cpp` | BSD-3-Clause; copyright-holders Curt Coder (studio2, cosmac, cosdasm, cdp1861) and Kevin Thacker (beep), kept in each file's header | compiled into `studio2_core` |
-| **The no-BIOS stand-in** (`core/studio2/stub.asm`, `stub.c`) | this repository: 92 bytes of 1802 code of our own | GPL-3.0-or-later | served at `$0000` when no BIOS is imported |
+| **The no-BIOS stand-in** (`core/studio2/stub.asm`, `stub.c`) | this repository: 92 bytes of 1802 code of our own | GPL-3.0-or-later | served at `$0000` when Preferences turns the BIOS off |
 | **The FujiNet Studio II cartridge device** (`core/studio2/fujinet_cart.c`) | transposed from the firmware's MAME device, `fujinet-firmware` `pico/studio2/emu/studio2_fujinet.cpp` | BSD-3-Clause, © Thomas Cherryhomes (the transposition GPL-3.0-or-later) | compiled into `studio2_core` |
 | **The cartridge firmware's own sources** (`s2map.c`, `fuji_load.c`, `s2_text.c`, `s2_font.c`, `s2_cart.h`, `fuji_mailbox.h` and headers from `pico/studio2/firmware`; `fujimail.c`, `fujibus.c`, the shared mailbox headers and `fujitcp.h` from `pico/common`) | `fujinet-firmware` master, staged verbatim into `core/studio2/fuji-generated/` by `cmake/StageFujiProto.cmake` | as marked in each file (the FujiNet project's, © Thomas Cherryhomes) | compiled into `studio2_core`, never patched |
 | **The CONFIG client** (`fujiconfigrom.h`, 6 656 bytes) | [`FujiNetWIFI/fujinet-config`](https://github.com/FujiNetWIFI/fujinet-config) `studio2/`, assembled with the Macroassembler AS, converted by `pico/studio2/tools/mkromh.py`, staged from `pico/studio2/firmware/baked/` | GPL-3.0 (the FujiNet project's) | the image the cartridge serves at power-on, as on the hardware |
@@ -64,30 +64,29 @@ The transport is this app's own portable `core/studio2/fujitcp_host.c`
 (Winsock and POSIX, abortable, a closed peer is a dead link, and the
 debugger's trace tap); the staged `fujitcp.c` is staged but not compiled.
 
-## System ROMs — not redistributed, only games need them
+## The BIOS — public domain, embedded
 
 The RCA Studio II BIOS (MAME's `84932.ic11`, `84933.ic12`, `85456.ic13`,
-`85457.ic14`) is copyrighted firmware that is **not** freely licensed. This
-repository does not contain or redistribute it. CONFIG and every FujiNet app
-boot without it, on the app's own stand-in; commercial games are BIOS
-byte-code and need it.
+`85457.ic14`) is committed in `tools/roms/` and compiled into every frontend
+(`tools/roms/embed-roms.py` generates the table; `core/src/roms.c` reads it).
+The maintainer's determination (2026-11-13) is that the rights to this firmware
+have lapsed into the public domain; it carries no GPL licence. If your
+jurisdiction or diligence reaches a different conclusion, delete the four files:
+the build then embeds an empty table, and CONFIG and FujiNet apps still boot on
+the app's own stand-in.
 
 - **Import BIOS…** (every frontend) copies a user's own image into the ROM
-  directory, identified by size and CRC-32 against MAME's set (the 2K set,
-  the 1K system ROM, or the four ROMs one by one); a 2K or 1K image with an
-  unknown CRC is accepted with a warning.
-- `-DWITH_STUDIO2_ROMS=ON` embeds whatever recognised images a developer put
-  in `tools/roms/`, for local development only. Every artifact this project
-  publishes is built with it **OFF** (every CI, release and Flatpak
-  configure passes it explicitly), and the `no_embedded_roms_*` tests
-  (`core/tests/no_embedded_roms.py`) check the shipped binaries for the
-  ROMs' bytes.
-- The tests never use RCA code either. `stub_boot` and `session` run a BIOS
-  the tests assemble themselves (`core/tests/roms/testbios.asm`: display on,
-  enter the cartridge), and `media` checks identification with filler images
-  whose last four bytes steer the CRC-32 to a table entry. Comparisons with
-  the real BIOS (`tools/ab/mame_ab.py --bios`) are run locally against a
-  developer's own MAME ROM set and are not part of the repository.
+  directory, identified by size and CRC-32 against MAME's set (the 2K set, the
+  1K system ROM, or the four ROMs one by one); a 2K or 1K image with an unknown
+  CRC is accepted with a warning. A file there wins over the built-in image.
+- `core/tests/bios_embedded.py` (ctest `bios_embedded_*`) checks that each
+  frontend executable contains all four ROMs.
+- The tests link an empty table, so they never use RCA code: `stub_boot` and
+  `session` run a BIOS the tests assemble themselves
+  (`core/tests/roms/testbios.asm`: display on, enter the cartridge), and
+  `media` checks identification with filler images whose last four bytes steer
+  the CRC-32 to a table entry. Comparisons with MAME (`tools/ab/mame_ab.py
+  --bios`) are run locally.
 
 ## Trademarks and names
 

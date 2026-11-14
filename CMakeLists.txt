@@ -13,7 +13,7 @@ endif()
 # The version lives here and nowhere else: the About boxes, the macOS bundle
 # and the release workflow all take it from PROJECT_VERSION, and cutting a tag
 # checks that the tag agrees with it (see "Cutting a release" in the README).
-project(fujinet-go-studio2-desktop VERSION 0.5.1 LANGUAGES C CXX)
+project(fujinet-go-studio2-desktop VERSION 0.6.0 LANGUAGES C CXX)
 
 add_compile_definitions(STUDIO2_VERSION_STRING="${PROJECT_VERSION}")
 
@@ -34,22 +34,10 @@ endif()
 set(FRONTEND "all" CACHE STRING
     "Frontend to build: gnome, kde, macos, windows, all, none")
 
-# The RCA Studio II BIOS is copyrighted RCA firmware and is NOT freely
-# licensed, so this repository does not redistribute it -- and only games need
-# it: CONFIG and every FujiNet app boot on the app's own stand-in
-# (core/studio2/stub.asm), and a game asks for Import BIOS.
-#
-#   OFF (default) -- the app reads any BIOS the user imported ("Import
-#                    BIOS...") from the ROM directory at run time. Every
-#                    artifact this repository publishes is built this way,
-#                    and core/tests/no_embedded_roms.py checks that claim
-#                    against the shipped binaries.
-#   ON            -- embed whatever recognised images are in tools/roms/ so a
-#                    development build has them from the first start. NOT for
-#                    redistribution.
-#
-# See COMPLIANCE.md.
-option(WITH_STUDIO2_ROMS "Embed the RCA Studio II BIOS found in tools/roms (see COMPLIANCE.md)" OFF)
+# The RCA Studio II BIOS (tools/roms/) is in the public domain (COMPLIANCE.md)
+# and is embedded in every frontend; Import BIOS... overrides it with the
+# user's own dump. CONFIG and FujiNet apps also boot on the app's own stand-in
+# (core/studio2/stub.asm) when Preferences turns the BIOS off.
 
 # Included here, at the top of the tree, so every subdirectory sees the
 # *variables* it defines: GNUInstallDirs caches CMAKE_INSTALL_DATADIR as an
@@ -104,35 +92,19 @@ if(FRONTEND STREQUAL "windows" OR (FRONTEND STREQUAL "all" AND WIN32))
   add_frontend(windows)
 endif()
 
-# The ROM-less claim, checked on every binary built with this option off --
-# which is the default here, and what every published artifact is built with.
-#
-# Registered at the top level rather than in core/ so it can be pointed at the
-# frontend executables: those are the artifacts a user actually downloads, and
-# they link differently from the test binaries.
-if(NOT WITH_STUDIO2_ROMS)
-  find_package(Python3 COMPONENTS Interpreter)
-  set(STUDIO2_ROM_CHECK_TARGETS "")
-  if(TARGET boot_smoke)
-    list(APPEND STUDIO2_ROM_CHECK_TARGETS boot_smoke)
-  endif()
+# The BIOS is in every frontend executable: the ROMs' bytes must be found in
+# each (core/tests/bios_embedded.py).
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
   foreach(_fe gnome kde macos windows)
     if(TARGET fujinet-go-studio2-${_fe})
-      list(APPEND STUDIO2_ROM_CHECK_TARGETS fujinet-go-studio2-${_fe})
+      add_test(NAME bios_embedded_${_fe}
+               COMMAND "${Python3_EXECUTABLE}" -I
+                       "${CMAKE_SOURCE_DIR}/core/tests/bios_embedded.py"
+                       "$<TARGET_FILE:fujinet-go-studio2-${_fe}>"
+                       "${CMAKE_SOURCE_DIR}/tools/roms")
     endif()
   endforeach()
-  if(Python3_Interpreter_FOUND)
-    foreach(_t IN LISTS STUDIO2_ROM_CHECK_TARGETS)
-      add_test(NAME no_embedded_roms_${_t}
-               COMMAND "${Python3_EXECUTABLE}"
-                       "${CMAKE_SOURCE_DIR}/core/tests/no_embedded_roms.py"
-                       "$<TARGET_FILE:${_t}>"
-                       "${CMAKE_SOURCE_DIR}/tools/roms")
-      # SKIPs (ctest 77) rather than fails when tools/roms has no real ROM to
-      # probe with -- true of every CI/release checkout.
-      set_tests_properties(no_embedded_roms_${_t} PROPERTIES SKIP_RETURN_CODE 77)
-    endforeach()
-  endif()
 endif()
 
 # Application icons (rendered from source art by tools/icons/make-icons.py).

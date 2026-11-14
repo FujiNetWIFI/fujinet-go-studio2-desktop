@@ -1062,7 +1062,7 @@ void DebuggerWindow::refreshIo()
     for (int port = 1; port < 8; ++port) s += QStringLiteral(" %1=$%2").arg(port).arg(hx(a.last_out[port], 2));
     s += QStringLiteral("\nINP 1         %1 (display on)\n\n").arg(a.inp1_count);
     s += QStringLiteral("BIOS          %1\n")
-        .arg(a.have_bios ? QStringLiteral("imported")
+        .arg(a.have_bios ? QStringLiteral("the real BIOS runs")
                          : a.stub_parked ? QStringLiteral("the stand-in, parked: a game needs the BIOS")
                                          : QStringLiteral("the stand-in (CONFIG and FujiNet apps)"));
     setText(m_io, s);

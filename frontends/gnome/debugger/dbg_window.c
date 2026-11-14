@@ -598,7 +598,7 @@ static void refresh_io(DbgWin *w)
         io.last_out[1], io.last_out[2], io.last_out[3], io.last_out[4],
         io.last_out[5], io.last_out[6], io.last_out[7],
         io.inp1_count,
-        io.have_bios ? "imported (the real BIOS runs)"
+        io.have_bios ? "the real BIOS runs"
         : io.stub_parked ? "the app's stand-in -- parked: it met a game, which needs the BIOS"
                          : "the app's stand-in (CONFIG and FujiNet apps)");
     set_text(w->io_text, text);

@@ -27,7 +27,7 @@ add_executable(fujinet-go-studio2-windows WIN32
 target_include_directories(fujinet-go-studio2-windows PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(fujinet-go-studio2-windows PRIVATE
-  studio2_session
+  studio2_session studio2_bios_full
   # dwmapi: DwmFlush, this platform's frame clock. comdlg32: the file
   # dialogs. shell32: DragQueryFile and ShellExecute for the web UI.
   # comctl32: the debugger's tab control and the settings trackbar (and the

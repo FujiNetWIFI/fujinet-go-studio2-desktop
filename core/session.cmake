@@ -15,26 +15,33 @@ set(STUDIO2_SESSION_SOURCES
   src/debug.c
   src/help.c)
 
-# The embedded ROM table: empty unless WITH_STUDIO2_ROMS (see COMPLIANCE.md).
-set(STUDIO2_ROMS_C "${CMAKE_CURRENT_BINARY_DIR}/roms_embedded.c")
+# The embedded BIOS table (tools/roms/embed-roms.py). The RCA Studio II BIOS is
+# in the public domain (COMPLIANCE.md), so the frontends link the full table
+# (studio2_bios_full). The tests link an empty one (studio2_bios_none): their
+# goldens run a BIOS of their own and the stand-in, and must not see RCA's.
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-if(WITH_STUDIO2_ROMS)
-  file(GLOB STUDIO2_ROM_INPUTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/*")
-  add_custom_command(
-    OUTPUT "${STUDIO2_ROMS_C}"
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
-            "${STUDIO2_ROMS_C}" "${CMAKE_SOURCE_DIR}/tools/roms"
-    DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py" ${STUDIO2_ROM_INPUTS}
-    COMMENT "Embedding the BIOS images in tools/roms (WITH_STUDIO2_ROMS=ON: NOT redistributable)"
-    VERBATIM)
-else()
-  add_custom_command(
-    OUTPUT "${STUDIO2_ROMS_C}"
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
-            --none "${STUDIO2_ROMS_C}"
-    DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
-    VERBATIM)
-endif()
+file(GLOB STUDIO2_ROM_INPUTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/*")
+set(STUDIO2_BIOS_FULL_C "${CMAKE_CURRENT_BINARY_DIR}/roms_embedded_full.c")
+set(STUDIO2_BIOS_NONE_C "${CMAKE_CURRENT_BINARY_DIR}/roms_embedded_none.c")
+add_custom_command(
+  OUTPUT "${STUDIO2_BIOS_FULL_C}"
+  COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
+          "${STUDIO2_BIOS_FULL_C}" "${CMAKE_SOURCE_DIR}/tools/roms"
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py" ${STUDIO2_ROM_INPUTS}
+  COMMENT "Embedding the BIOS"
+  VERBATIM)
+add_custom_command(
+  OUTPUT "${STUDIO2_BIOS_NONE_C}"
+  COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
+          --none "${STUDIO2_BIOS_NONE_C}"
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/roms/embed-roms.py"
+  VERBATIM)
+foreach(_v full none)
+  string(TOUPPER ${_v} _V)
+  add_library(studio2_bios_${_v} STATIC "${STUDIO2_BIOS_${_V}_C}")
+  set_target_properties(studio2_bios_${_v} PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(studio2_bios_${_v} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+endforeach()
 
 # The Help, embedded: data/help/help.md as topics of styled spans
 # (core/include/studio2help.h), which every frontend lays out with its own
@@ -50,7 +57,7 @@ add_custom_command(
   COMMENT "Help"
   VERBATIM)
 
-add_library(studio2_session STATIC ${STUDIO2_SESSION_SOURCES} "${STUDIO2_ROMS_C}" "${STUDIO2_HELP_C}")
+add_library(studio2_session STATIC ${STUDIO2_SESSION_SOURCES} "${STUDIO2_HELP_C}")
 set_target_properties(studio2_session PROPERTIES
   C_STANDARD 11
   POSITION_INDEPENDENT_CODE ON)

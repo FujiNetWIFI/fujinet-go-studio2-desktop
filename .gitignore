@@ -18,12 +18,12 @@ core/studio2/fuji-generated/
 # FujiNet runtime build tree (tools/fujinet/build-fujinet-desktop.sh).
 tools/fujinet/work/
 
-# System ROMs. The RCA Studio II BIOS is copyrighted and never committed; a
-# developer may drop it here for -DWITH_STUDIO2_ROMS=ON builds and the
-# no_embedded_roms checks (see COMPLIANCE.md).
+# System ROMs: tools/roms/ holds the RCA Studio II BIOS (public domain,
+# COMPLIANCE.md); anything else dropped there stays untracked.
 tools/roms/*
 !tools/roms/embed-roms.py
 !tools/roms/README.md
+!tools/roms/*.ic1[1-4]
 
 # Cartridge images that stray into the tree while testing. The only image
 # this project ships is FujiNet's own CONFIG client, staged from the
