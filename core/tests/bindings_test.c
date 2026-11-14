@@ -54,6 +54,34 @@ int main(void)
     check(b.keysym == STUDIO2_KEYSYM_ESCAPE, "Reset to CONFIG defaults to Escape");
     check(studio2session_target_for_key(s, 'Q') == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_1), "lookup folds case");
     check(studio2session_target_for_key(s, '7') == -1, "the top row's 7 is not the numeric keypad's");
+    /* the fixed extras on keypad A: arrows are 2 4 6 8, Ctrl and Return are 5 */
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_UP) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_2), "Up is keypad A 2");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_DOWN) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_8), "Down is keypad A 8");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_LEFT) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_4), "Left is keypad A 4");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_RIGHT) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_6), "Right is keypad A 6");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_LCTRL) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_5), "Left Ctrl is keypad A 5");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_RCTRL) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_5), "Right Ctrl is keypad A 5");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_RETURN) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_5), "Return is keypad A 5");
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_KP_ENTER) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_5), "Keypad Enter is keypad A 5");
+    check(studio2session_binding_get(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_2)).keysym == 'w',
+          "the extras are not bindings: keypad A 2 is still W");
+    /* a key given to a target belongs to that target alone */
+    studio2session_binding_set_key(s, STUDIO2_TARGET_PORT(1, STUDIO2_ACT_2), STUDIO2_KEYSYM_UP, stolen, sizeof stolen);
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_UP) == STUDIO2_TARGET_PORT(1, STUDIO2_ACT_2),
+          "a bound Up is the binding's, not the extra");
+    studio2session_bindings_reset(s);
+    check(studio2session_target_for_key(s, STUDIO2_KEYSYM_UP) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_2),
+          "after a reset Up is keypad A 2 again");
+    /* pressing: the extras press and release their keypad key; with W holding
+     * it already, an arrow rides along and its release lets nothing go */
+    check(studio2session_key(s, STUDIO2_KEYSYM_UP, 1) == 1, "Up is consumed");
+    check(studio2session_key(s, STUDIO2_KEYSYM_UP, 0) == 1, "and its release too");
+    check(studio2session_key(s, 'w', 1) == 1, "W presses keypad A 2");
+    check(studio2session_key(s, STUDIO2_KEYSYM_UP, 1) == 1, "Up with W held is still consumed");
+    check(studio2session_key(s, STUDIO2_KEYSYM_UP, 0) == 0, "its release does not let W's key go");
+    check(studio2session_key(s, 'w', 0) == 1, "W's release does");
+    check(studio2session_key(s, STUDIO2_KEYSYM_LCTRL, 1) == 1 && studio2session_key(s, STUDIO2_KEYSYM_LCTRL, 0) == 1,
+          "Ctrl presses and releases keypad A 5");
     check(studio2session_target_for_button(s, 1, STUDIO2_PAD_BTN_SOUTH) == STUDIO2_TARGET_PORT(1, STUDIO2_ACT_0),
           "button lookup is scoped to the keypad");
     check(studio2session_target_for_button(s, 0, STUDIO2_PAD_BTN_START) == STUDIO2_TARGET_SWITCH(STUDIO2_SW_CLEAR),

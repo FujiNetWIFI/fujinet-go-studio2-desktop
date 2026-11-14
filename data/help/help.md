@@ -128,6 +128,8 @@ Keys go by where they are on the keyboard, whatever your layout.
 | A, 4 5 6 | <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> |
 | A, 7 8 9 | <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> |
 | A, 0 | <kbd>Left Alt</kbd> |
+| A, 2 4 6 8 as well | <kbd>↑</kbd> <kbd>←</kbd> <kbd>→</kbd> <kbd>↓</kbd> |
+| A, 5 as well | <kbd>Ctrl</kbd> or <kbd>Return</kbd> |
 | B, 1 2 3 | <kbd>Keypad 7</kbd> <kbd>Keypad 8</kbd> <kbd>Keypad 9</kbd> |
 | B, 4 5 6 | <kbd>Keypad 4</kbd> <kbd>Keypad 5</kbd> <kbd>Keypad 6</kbd> |
 | B, 7 8 9 | <kbd>Keypad 1</kbd> <kbd>Keypad 2</kbd> <kbd>Keypad 3</kbd> |
@@ -137,6 +139,10 @@ Keys go by where they are on the keyboard, whatever your layout.
 |---|---|
 | CLEAR | <kbd>F3</kbd> |
 | Reset to CONFIG | <kbd>Escape</kbd> |
+
+The arrows, <kbd>Ctrl</kbd> and <kbd>Return</kbd> are extra keys for keypad A,
+the way the D-pad is for a gamepad: they are not in the bindings list, and
+giving one of them to a job in the bindings list takes it from keypad A.
 
 A key does one thing: giving a key to a new job takes it from the old one.
 
@@ -154,7 +160,8 @@ The app keeps these keys for itself:
 
 <!-- only: gnome kde windows -->
 
-Keys with <kbd>Ctrl</kbd> never reach the console.
+Keys pressed with <kbd>Ctrl</kbd> held never reach the console (<kbd>Ctrl</kbd>
+on its own is keypad A's 5).
 
 <!-- end -->
 

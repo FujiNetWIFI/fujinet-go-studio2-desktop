@@ -990,7 +990,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 return 0;
             break;
         }
-        if (ctrl) {
+        if (ctrl && wp != VK_CONTROL) {
             if (wp == 'O') { PostMessage(hwnd, WM_COMMAND, IDM_OPEN, 0); return 0; }
             if (wp == VK_OEM_COMMA) { PostMessage(hwnd, WM_COMMAND, IDM_SETTINGS, 0); return 0; }
             break;

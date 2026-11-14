@@ -181,13 +181,37 @@ static int target_for_key_locked(uint32_t keysym)
     return -1;
 }
 
+/* Keys that also play keypad A without being in the table: the arrow keys
+ * are the games' 2 4 6 8 (the same four the D-pad drives), and either Ctrl
+ * or Return is 5 (the centre / fire key). They are fixed extras, not
+ * bindings: a key the table gives to any target is that target's alone, so
+ * rebinding an arrow or Ctrl or Return anywhere takes it out of this list. */
+static const struct { uint32_t keysym; int act; } s_extra_keys[] = {
+    { STUDIO2_KEYSYM_UP, STUDIO2_ACT_2 },       { STUDIO2_KEYSYM_DOWN, STUDIO2_ACT_8 },
+    { STUDIO2_KEYSYM_LEFT, STUDIO2_ACT_4 },     { STUDIO2_KEYSYM_RIGHT, STUDIO2_ACT_6 },
+    { STUDIO2_KEYSYM_LCTRL, STUDIO2_ACT_5 },    { STUDIO2_KEYSYM_RCTRL, STUDIO2_ACT_5 },
+    { STUDIO2_KEYSYM_RETURN, STUDIO2_ACT_5 },
+};
+
+static int extra_target_locked(uint32_t keysym)
+{
+    size_t idx;
+    if (!keysym || target_for_key_locked(keysym) >= 0) return -1;
+    for (idx = 0; idx < sizeof s_extra_keys / sizeof *s_extra_keys; idx++)
+        if (s_extra_keys[idx].keysym == keysym)
+            return STUDIO2_TARGET_PORT(0, s_extra_keys[idx].act);
+    return -1;
+}
+
 int studio2session_target_for_key(studio2session *s, uint32_t keysym)
 {
     int t;
     (void)s;
     pthread_mutex_lock(&s_lock);
     ensure_seeded_locked();
-    t = target_for_key_locked(fold(keysym));
+    keysym = fold(keysym);
+    t = target_for_key_locked(keysym);
+    if (t < 0) t = extra_target_locked(keysym);
     pthread_mutex_unlock(&s_lock);
     return t;
 }
@@ -451,6 +475,21 @@ int studio2session_key(studio2session *s, uint32_t keysym, int down)
             pthread_mutex_unlock(&s_lock);
             studio2session_press(s, t, 1);
             pthread_mutex_lock(&s_lock);
+        }
+        if (!hit) {
+            /* a fixed extra key (arrows, Ctrl, Return): keypad A's 2 4 6 8 5.
+             * If a bound key already holds that keypad key, this one just
+             * rides along: its release must not let the other go. */
+            t = extra_target_locked(folded);
+            if (t >= 0) {
+                hit = 1;
+                if (s->held_keysym[t] == 0) {
+                    s->held_keysym[t] = folded;
+                    pthread_mutex_unlock(&s_lock);
+                    studio2session_press(s, t, 1);
+                    pthread_mutex_lock(&s_lock);
+                }
+            }
         }
         pthread_mutex_unlock(&s_lock);
         return hit;

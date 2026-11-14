@@ -393,7 +393,10 @@ void MainWindow::keyPressEvent(QKeyEvent *e)
     /* Ctrl chords are the menus' shortcuts. Alt is not: Left Alt is keypad
      * A's 0 (MAME's key), and the menus' Alt+letter mnemonics are taken as
      * shortcuts before a key event ever gets here. */
-    if (e->modifiers() & Qt::ControlModifier) { QMainWindow::keyPressEvent(e); return; }
+    if ((e->modifiers() & Qt::ControlModifier) && e->key() != Qt::Key_Control) {
+        QMainWindow::keyPressEvent(e);
+        return;
+    }
 
     const uint32_t ks = studio2KeysymFromQt(e);
     if (!ks) { QMainWindow::keyPressEvent(e); return; }

@@ -172,7 +172,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
     /* The menu accelerators are all Ctrl. Alt is not a modifier here: Left
      * Alt is keypad A's 0 (MAME's key), and a game may want it held while
      * another key is pressed. */
-    if (state & GDK_CONTROL_MASK)
+    if ((state & GDK_CONTROL_MASK) && keyval != GDK_KEY_Control_L && keyval != GDK_KEY_Control_R)
         return FALSE;
 
     keysym = keysym_of(keyval, keycode);
