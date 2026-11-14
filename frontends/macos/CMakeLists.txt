@@ -26,6 +26,7 @@ add_executable(fujinet-go-studio2-macos MACOSX_BUNDLE
   help/HelpWindow.m
   keypad/KeypadWindow.m
   debugger/DebuggerWindow.m
+  debugger/VideoTab.m
   "${STUDIO2_ICNS}"
 )
 set_source_files_properties("${STUDIO2_ICNS}" PROPERTIES

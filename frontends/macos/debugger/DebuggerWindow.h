@@ -1,6 +1,5 @@
 /*
- * The AppKit debugger window over the CDP1802 / CDP1861 debugger engine
- * (studio2debug.h).
+ * The AppKit debugger window over the CDP1802 / CDP1861 debugger engine (studio2debug.h).
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #pragma once
