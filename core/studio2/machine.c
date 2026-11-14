@@ -3,7 +3,8 @@
  * Transposed from MAME's src/mame/rca/studio2.cpp (BSD-3-Clause,
  * copyright-holders Curt Coder): studio2_map / studio2_io_map,
  * machine_start's ROM and cart handlers, dispon_r, keylatch_w, clear_r,
- * ef3_r, ef4_r, q_w, reset_w, plus MAME's beep_device for the sound.
+ * ef3_r, ef4_r, q_w, reset_w, plus MAME's beep_device for the sound in
+ * A/B runs; otherwise the console's NE555 (beeper555.c).
  *
  * With the FujiNet cartridge every read crosses the edge first (as the
  * firmware's MAME device installs one read handler over the whole space);
@@ -115,14 +116,54 @@ static int ef_read(void *user, int n)
 }
 
 /*-------------------------------------------------
-    the beeper (beep.cpp)
+    the beeper
 -------------------------------------------------*/
+
+static void audio_put(studio2_machine_t *m, float v)
+{
+    if (m->out_frames < STUDIO2_AUDIO_MAX)
+    {
+        m->out[2 * m->out_frames] = v;
+        m->out[2 * m->out_frames + 1] = v;
+        m->out_frames++;
+    }
+    m->audio_samples++;
+}
+
+/* The NE555 runs a clock at a time on Q as it stood over those clocks; each
+ * sample is the mean of the clocks it spans. */
+static void audio_advance_ne555(studio2_machine_t *m)
+{
+    const int q = m->cpu.q;
+
+    while (m->ne555_ticks < m->cycles)
+    {
+        beeper555_tick(&m->ne555, q, m->beep_tuning);
+        m->ne555_ticks++;
+        m->ne555_acc += beeper555_level(&m->ne555);
+        m->ne555_n++;
+        if (m->ne555_ticks * STUDIO2_AUDIO_RATE >= (m->audio_samples + 1) * STUDIO2_CPU_CLOCK)
+        {
+            audio_put(m, m->ne555_acc / (float)m->ne555_n * m->beep_gain);
+            m->ne555_acc = 0.0f;
+            m->ne555_n = 0;
+        }
+    }
+}
+
+/* MAME's beep.cpp, for A/B runs */
 
 /* The samples due up to the current clock, with the beeper as it stood
  * over them: called before every CPU pass, so a Q change lands on the
  * sample MAME's stream update would put it on. */
 static void audio_advance(studio2_machine_t *m)
 {
+    if (!m->beep_mame)
+    {
+        audio_advance_ne555(m);
+        return;
+    }
+
     const uint64_t due = m->cycles * STUDIO2_AUDIO_RATE / STUDIO2_CPU_CLOCK;
 
     while (m->audio_samples < due)
@@ -138,13 +179,7 @@ static void audio_advance(studio2_machine_t *m)
             }
             v = m->beep_signal * m->beep_gain;
         }
-        if (m->out_frames < STUDIO2_AUDIO_MAX)
-        {
-            m->out[2 * m->out_frames] = v;
-            m->out[2 * m->out_frames + 1] = v;
-            m->out_frames++;
-        }
-        m->audio_samples++;
+        audio_put(m, v);
     }
 }
 
@@ -192,6 +227,8 @@ void studio2_machine_init(studio2_machine_t *m, const uint8_t *bios, uint32_t bi
 
     m->beep_signal = 1.0f;
     m->beep_gain = 0.25f;
+    m->beep_mame = mame_power_on;
+    beeper555_reset(&m->ne555);
 
     cdp1861_init(&m->vdc);
     cdp1802_init(&m->cpu, &bus);

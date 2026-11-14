@@ -26,6 +26,11 @@ studio2_test(studio2_headless studio2_headless.c)
 studio2_test(dasm_test dasm_test.c)
 add_test(NAME dasm COMMAND dasm_test)
 
+# The NE555 beeper held to the console's pitch contour, duty, release,
+# retriggers and tunings.
+studio2_test(beeper_test beeper_test.c)
+add_test(NAME beeper COMMAND beeper_test)
+
 # The core held to MAME read for read, with no RCA code: the tests' own BIOS
 # and game, and CONFIG on the stand-in, against folds of MAME's own traces
 # (tools/ab/README.md).
