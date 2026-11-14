@@ -2337,10 +2337,10 @@ static void paint_disasm(debugger *d, HWND hwnd, HDC dc)
         if (l->has_breakpoint || l->bp_disabled) {
             /* a red dot for an enabled breakpoint, a grey hollow one for a disabled one */
             const int size = d->line_h - S(d, 6) > 4 ? d->line_h - S(d, 6) : 4;
-            HGDIOBJ oldb = SelectObject(dc, l->has_breakpoint ? (is_pc ? GetStockObject(WHITE_BRUSH) : d->bp_on)
+            HGDIOBJ oldb = SelectObject(dc, l->has_breakpoint ? d->bp_on
                                                               : GetStockObject(NULL_BRUSH));
-            HPEN grey_pen = CreatePen(PS_SOLID, 2, is_pc ? RGB(255, 255, 255) : RGB(0x9a, 0x99, 0x96));
-            HGDIOBJ oldp = SelectObject(dc, l->has_breakpoint ? GetStockObject(is_pc ? BLACK_PEN : NULL_PEN) : grey_pen);
+            HPEN grey_pen = CreatePen(PS_SOLID, 2, is_pc ? RGB(0x5a, 0x58, 0x55) : RGB(0x9a, 0x99, 0x96));
+            HGDIOBJ oldp = SelectObject(dc, l->has_breakpoint ? GetStockObject(NULL_PEN) : grey_pen);
             Ellipse(dc, S(d, 4), y + (d->line_h - size) / 2, S(d, 4) + size + 1, y + (d->line_h - size) / 2 + size + 1);
             SelectObject(dc, oldp);
             SelectObject(dc, oldb);
