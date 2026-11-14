@@ -37,6 +37,7 @@ add_executable(fujinet-go-studio2-gnome
   help/help_window.c
   keypad/keypad_window.c
   debugger/dbg_window.c
+  debugger/dbg_video.c
 )
 target_link_libraries(fujinet-go-studio2-gnome
   PRIVATE studio2_session studio2_bios_full PkgConfig::GTK4 PkgConfig::ADW)
