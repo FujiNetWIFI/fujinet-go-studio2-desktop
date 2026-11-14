@@ -1,10 +1,13 @@
 /*
  * Debugger window (Qt6 Widgets) over the CDP1802 / CDP1861 debugger engine,
- * via core/include/studio2debug.h. Mirrors the GNOME one tab for tab.
+ * via core/include/studio2debug.h. Mirrors the GNOME one tab for tab, and the
+ * SMS / Astrocade / Apple II KDE debuggers' design: a QTabWidget under a toolbar,
+ * the registers in a strip under the tabs.
  *
  * The engine is attached while the window is shown (which stops the
  * machine, as on every sibling) and detached when it is hidden, which lets
- * the machine run on.
+ * the machine run on. The window is never deleted by its close button: it
+ * is hidden, and comes back as it was.
  *
  * Copyright (C) 2026 Thomas Cherryhomes
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -23,6 +26,7 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 extern "C" {
@@ -30,9 +34,11 @@ extern "C" {
 #include "studio2session.h"
 }
 
-/* The painted panels, defined in DebuggerWindow.cpp: a keypad as the
- * console sees it (Sound & I/O), the cartridge's page map and its text
- * engine's character grid (Cart). */
+class VideoTab;
+
+/* The painted panels, defined in DebuggerWindow.cpp: a keypad as the console
+ * sees it, the cartridge's page map and its text engine's character grid
+ * (Cart & I/O). */
 class KeypadDiagram;
 class PageMapWidget;
 class TextGridWidget;
@@ -46,6 +52,7 @@ public:
     static void toggleFor(QWidget *parent, studio2session *session);
 
 protected:
+    bool event(QEvent *e) override;
     void keyPressEvent(QKeyEvent *e) override;
     void showEvent(QShowEvent *e) override;
     void hideEvent(QHideEvent *e) override;
@@ -53,35 +60,78 @@ protected:
 
 private:
     explicit DebuggerWindow(studio2session *session, QWidget *parent);
+    ~DebuggerWindow() override;
     QWidget *buildToolbar();
-    QWidget *buildPrompt();
-    QWidget *buildCpu();
+    QWidget *buildConsole();
+    QWidget *buildRegs();
     QWidget *buildDisasm();
+    QWidget *buildMemory();
+    QWidget *buildSearchBar();
     QWidget *buildVideo();
-    QWidget *buildIo();
     QWidget *buildBreaks();
+    QWidget *buildWatches();
     QWidget *buildCart();
+    QWidget *buildHist(int idx);
+    QWidget *buildSound();
+    QWidget *buildSymbols();
     QWidget *buildFujinet();
 
-    void refreshAll();
     void refreshStatus();
     void refreshCpu();
-    void refreshRam();
+    void refreshMem();
     void refreshDisasm();
-    void refreshVideo();
-    void refreshIo();
+    void refreshVideo(bool force);
     void refreshBps();
+    void refreshWatches(bool force);
     void refreshCart();
+    void refreshHist(int idx, bool force);
+    void refreshSound();
+    void refreshSymbols(bool force);
     void refreshFujinet(bool force);
+    void refreshPage(int page, bool live);
+    void refreshAll();
+    void resync();
+    void syncLater();
+    void settleAndSync();
     void tick();
+    void recentreOnStop();
+
+    void consoleAppend(const QString &text);
+    void runConsole();
+    void completeConsole();
+    void say(const QString &msg);
+    void message(const QString &msg);
+
     void toggleRun();
-    void runPrompt();
-    void appendPrompt(const QString &text);
-    void jumpTo(const QString &text);
-    void stepAnd(void (*fn)(studio2debug *));
+    void stepAnd(const std::function<void()> &fn);
+    void runToCursor();
+    void toggleBreakpoint(int addr);
+    void toggleSelected();
+    void addBreakpoint();
+    void breakAt();
+    void setReg(int reg);
+    void memGoto();
+    void memSearch(bool backward);
+    void showInMemory(uint16_t lo, uint16_t hi);
+    void showInDisassembly(uint16_t addr);
+    void scrollMemory(uint16_t addr);
+    void popOut(int tab);
+    void dock(int tab);
+    int currentTab() const;
+    bool tabVisible(int tab) const;
+    void addWatch(const QString &text);
+    void watchBreak(int index);
+    void memWrite();
+    void jumpTo();
     void loadSymbols(bool fromFile);
-    void setRegister(int reg, QLineEdit *edit);
-    bool addressOf(const QString &text, long *out);
+    void clearSymbols();
+    void save(const char *kind, const QString &title, const QString &file);
+    int visibleRows() const;
+    bool numberOf(const QString &text, long *out, QString *why = nullptr);
+    bool addressOf(const QString &text, long *out, QString *why = nullptr);
+    bool rangeOf(const QString &startText, const QString &endText, int type, uint16_t *lo, uint16_t *hi,
+                 QString *why);
+    void setEntry(QLineEdit *e, const QString &text);
 
     studio2session *m_session;
     studio2debug *m_dbg;
@@ -93,45 +143,89 @@ private:
 
     QLabel *m_status = nullptr;
     QPushButton *m_runBtn = nullptr;
+    QLineEdit *m_breakAt = nullptr;
 
-    QPlainTextEdit *m_promptOut = nullptr;
-    QLineEdit *m_promptIn = nullptr;
+    /* console */
+    QPlainTextEdit *m_conOut = nullptr;
+    QLineEdit *m_conIn = nullptr;
     QStringList m_history;
     int m_historyPos = 0;
 
+    /* registers strip: m_reg is indexed by studio2debug_reg */
     QLineEdit *m_reg[STUDIO2_REG_COUNT] = {};
     QLabel *m_regLabel[16] = {};
     QCheckBox *m_ef[4] = {};
-    QLabel *m_cpuInfo = nullptr;
-    QPlainTextEdit *m_ram = nullptr;
-    QLineEdit *m_ramGoto = nullptr;
-    QLineEdit *m_ramAddr = nullptr, *m_ramVal = nullptr;
+    QLabel *m_opcode = nullptr;
+    QLabel *m_beam = nullptr;
 
+    /* memory: the whole 64K the CPU sees, 16 bytes a row */
+    QPlainTextEdit *m_mem = nullptr;
+    QLineEdit *m_memGoto = nullptr, *m_memAddr = nullptr, *m_memVal = nullptr;
+    bool m_hl = false;                  /* a range is highlighted in the dump */
+    uint16_t m_hlLo = 0, m_hlHi = 0;
+    QComboBox *m_srchKind = nullptr;
+    QLineEdit *m_srchEntry = nullptr;
+    QLabel *m_srchNote = nullptr;
+
+    /* disassembly */
     QPlainTextEdit *m_disasm = nullptr;
     QCheckBox *m_followPc = nullptr;
     QLineEdit *m_jump = nullptr;
     uint16_t m_disasmTop = 0;
+    uint64_t m_seenSerial = 0;          /* studio2debug_stop_serial last followed */
+    int m_selected = -1;                /* the selected line's address, or -1 */
+    int m_wheel = 0;                    /* wheel travel not yet a row */
     std::vector<uint16_t> m_lineAddr;
 
-    QPlainTextEdit *m_videoText = nullptr;
-    QComboBox *m_videoView = nullptr;
-    QLabel *m_videoPic = nullptr;
-    QLabel *m_videoNote = nullptr;
-    std::vector<uint32_t> m_videoPx;
+    /* video */
+    VideoTab *m_video = nullptr;
+    bool m_videoForce = true;           /* the tab was just shown: redraw everything */
 
-    QPlainTextEdit *m_io = nullptr;
-    KeypadDiagram *m_keypad[2] = {};
-
+    /* breakpoints */
     QTableWidget *m_bpTable = nullptr;
+    QString m_bpSig;                    /* what the table shows, to rebuild on change */
+    bool m_bpFilling = false;
+    QLabel *m_bpEmpty = nullptr, *m_bpMsg = nullptr;
     QComboBox *m_bpType = nullptr;
     QLineEdit *m_bpStart = nullptr, *m_bpEnd = nullptr, *m_bpCond = nullptr;
-    bool m_bpFilling = false;
+    QLabel *m_bpStop = nullptr;
 
-    QPlainTextEdit *m_cart = nullptr;
+    /* watches */
+    QLineEdit *m_wtEntry = nullptr;
+    QTableWidget *m_wtTable = nullptr;
+    unsigned m_wtGen = ~0u;
+
+    /* cart and I/O */
+    QPlainTextEdit *m_io = nullptr;
+    KeypadDiagram *m_keypad[2] = {};
     PageMapWidget *m_pageMap = nullptr;
     TextGridWidget *m_textGrid = nullptr;
     QLabel *m_textNote = nullptr;
 
+    /* sound */
+    QPlainTextEdit *m_sound = nullptr;
+
+    /* symbols */
+    QLineEdit *m_symFilter = nullptr;
+    QTableWidget *m_symTable = nullptr;
+    QLabel *m_symCount = nullptr;
+    QString m_symSig;
+
+    /* trace (0, live) and history (1, on a stop) share the engine's ring */
+    QPushButton *m_hRec[2] = {};
+    QComboBox *m_hFilter[2] = {};
+    QLineEdit *m_hRange[2] = {};
+    QPlainTextEdit *m_hText[2] = {};
+    QLabel *m_hNote[2] = {};
+    int m_hSeen[2] = { -1, -1 };
+    bool m_hSync = false;
+
+    /* tabs peeled off into windows of their own */
+    QWidget *m_pages[16] = {};
+    QWidget *m_popped[16] = {};
+    bool m_closing = false;
+
+    /* fujinet */
     QLabel *m_fujiNote = nullptr;
     QPlainTextEdit *m_fujiText = nullptr, *m_fujiState = nullptr;
     uint64_t m_fujiLast = 0;
