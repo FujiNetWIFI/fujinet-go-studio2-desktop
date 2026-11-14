@@ -59,6 +59,23 @@ extern "C" {
 #define CDP1861_VIS_W   (CDP1861_HBLANK_START - CDP1861_HBLANK_END)                  /* 100 */
 #define CDP1861_VIS_H   (CDP1861_SCANLINE_VBLANK_START - CDP1861_SCANLINE_VBLANK_END) /* 246 */
 
+/* What the DMA delivered on one line, for the debugger's Video tab. A record
+ * belongs to the frame in `stamp` (frame index + 1, 0 never written), so a
+ * stopped machine reads this frame's lines above the beam and the last
+ * frame's below it without anything being cleared. */
+#define CDP1861_LF_DISP 0x01    /* the display was on at the first byte */
+#define CDP1861_LF_INT  0x02    /* the INT line was asserted */
+#define CDP1861_LF_EFX  0x04    /* the EFx line was asserted */
+
+typedef struct {
+    uint32_t stamp;
+    uint16_t addr;          /* R0 at the line's first DMA byte */
+    uint8_t count;          /* bytes delivered on this line (8 full, fewer short) */
+    uint8_t hpos;           /* the beam's hpos at the first byte */
+    uint8_t flags;          /* CDP1861_LF_* at the first byte */
+    uint8_t data[8];
+} cdp1861_line_t;
+
 typedef struct {
     /* MAME state */
     int disp;
@@ -75,6 +92,7 @@ typedef struct {
     uint32_t bitmap[CDP1861_SCREEN_WIDTH * CDP1861_TOTAL_SCANLINES];
 
     /* for the debugger */
+    cdp1861_line_t line_regs[CDP1861_TOTAL_SCANLINES];
     uint64_t dma_bytes;     /* bytes plotted since power-on */
     uint16_t last_dma_addr;
 } cdp1861_t;

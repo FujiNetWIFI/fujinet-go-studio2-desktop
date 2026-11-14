@@ -69,6 +69,19 @@ int studio2_host_frame_copy(uint32_t *dst, uint64_t *serial_inout);
  * flight, so the context may be freed once it returns). */
 typedef void (*studio2_host_frame_cb)(void *ctx);
 void studio2_host_set_frame_callback(studio2_host_frame_cb cb, void *ctx);
+/* ---- the debugger's Video tab: a once-a-frame capture ----
+ * studio2vidcap.h. capture_enable is ref-counted: while any user is enabled
+ * the machine thread captures the finished frame (the 1861's raster and what
+ * the DMA delivered on every line) into a double buffer. capture_get copies
+ * the newest capture into dst when its serial differs from *serial_inout and
+ * returns 1. capture_fill is for a reader that holds studio2_host_lock (or
+ * is the machine thread): the machine as it stands now, lines the beam has
+ * passed from this frame and the rest from the last one, beam_row = vpos. */
+struct studio2vid_capture;
+void studio2_host_capture_enable(int on);
+int  studio2_host_capture_get(struct studio2vid_capture *dst, uint64_t *serial_inout);
+void studio2_host_capture_fill(const studio2_machine_t *m, struct studio2vid_capture *dst);
+
 /* Frames the machine has run since start (for pacing checks). */
 uint64_t studio2_host_frame_count(void);
 /* How the deadline ladder fared (boot_smoke prints it): sleeps taken, how

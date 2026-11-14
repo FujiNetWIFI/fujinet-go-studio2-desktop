@@ -114,6 +114,7 @@ struct studio2_machine {
                      uint8_t data);
     void *bus_hook_user;
     uint8_t watch;                /* STUDIO2_WATCH_* */
+    uint8_t last_old;             /* the byte a STUDIO2_BUS_MEMW store replaced */
 };
 
 #define STUDIO2_WATCH_MEMR 0x01

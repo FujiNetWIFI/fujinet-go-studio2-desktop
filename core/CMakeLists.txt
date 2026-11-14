@@ -66,6 +66,10 @@ foreach(_f debugger.c expr.c fujitrace.c prompt.c symbols.c symbols_builtin.c ra
     list(APPEND STUDIO2_DEBUGGER_SOURCES debugger/${_f})
   endif()
 endforeach()
+# The engine's memory tools (watches, search parsing, breakpoint text).
+list(APPEND STUDIO2_DEBUGGER_SOURCES debugger/memtools.c)
+# The Video tab's controller (studio2vidtab.h).
+list(APPEND STUDIO2_DEBUGGER_SOURCES debugger/vidtab.c)
 
 add_library(studio2_core STATIC
   ${STUDIO2_EMU_SOURCES} ${STUDIO2_FUJI_SOURCES} ${STUDIO2_DEBUGGER_SOURCES})

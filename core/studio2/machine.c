@@ -60,7 +60,12 @@ static void bus_write(void *user, uint16_t a, uint8_t d)
     /* map(0x0000, 0x01ff).mirror(0xfc00).ram(), minus machine_start's
      * unmap of $0000-$07FF */
     if (a >= 0x0800 && !(a & 0x0200))
+    {
+        m->last_old = m->ram[a & (STUDIO2_RAM_SIZE - 1)];   /* for the debugger's `old` */
         m->ram[a & (STUDIO2_RAM_SIZE - 1)] = d;
+    }
+    else if (m->watch & STUDIO2_WATCH_MEMW)
+        m->last_old = studio2_machine_peek(m, a);    /* nothing stored: it stays */
     if ((m->watch & STUDIO2_WATCH_MEMW) && m->bus_hook)
         m->bus_hook(m, m->bus_hook_user, STUDIO2_BUS_MEMW, a, d);
 }

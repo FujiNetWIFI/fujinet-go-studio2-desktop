@@ -153,6 +153,26 @@ void cdp1861_dma_w(cdp1861_t *v, uint64_t now, uint16_t addr, uint8_t data)
     const int sx = cdp1861_hpos(now) + 4;
     const int y = cdp1861_vpos(now);
     const size_t base = (size_t)y * CDP1861_SCREEN_WIDTH + (size_t)sx;
+    cdp1861_line_t *rec = &v->line_regs[y];
+    const uint32_t stamp = (uint32_t)(now / CDP1861_FRAME_CLOCKS) + 1u;
+
+    if (rec->stamp != stamp)
+    {
+        memset(rec, 0, sizeof *rec);
+        rec->stamp = stamp;
+    }
+    if (rec->count == 0)
+    {
+        rec->addr = addr;
+        rec->hpos = (uint8_t)cdp1861_hpos(now);
+        rec->flags = (uint8_t)((v->disp ? CDP1861_LF_DISP : 0)
+                             | (v->int_line ? CDP1861_LF_INT : 0)
+                             | (v->efx_line ? CDP1861_LF_EFX : 0));
+    }
+    if (rec->count < sizeof rec->data)
+        rec->data[rec->count] = data;
+    if (rec->count < 255)
+        rec->count++;
 
     for (int x = 0; x < 8; x++)
     {

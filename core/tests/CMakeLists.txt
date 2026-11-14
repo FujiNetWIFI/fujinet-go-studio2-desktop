@@ -152,6 +152,19 @@ studio2_session_test(debug_test debug_test.c)
 add_test(NAME debug COMMAND debug_test)
 set_tests_properties(debug PROPERTIES TIMEOUT 120)
 
+# The debugger's memory tools: search parsing, the watch list, trace filters
+# and breakpoint descriptions. Pure.
+studio2_test(memtools_test memtools_test.c)
+add_test(NAME memtools COMMAND memtools_test)
+
+# The Video tab's controller (core/debugger/vidtab.c): synthetic split frames
+# (no machine), then the real machine's capture against the frame copy.
+studio2_session_test(vidtab_test vidtab_test.c)
+add_test(NAME vidtab COMMAND vidtab_test)
+studio2_session_test(vidtab_live_test vidtab_live_test.c)
+add_test(NAME vidtab_live COMMAND vidtab_live_test)
+set_tests_properties(vidtab_live PROPERTIES TIMEOUT 120)
+
 # The real in-process FujiNet: brings libfujinet up on its port, boots the
 # CONFIG client and confirms the cartridge's link came up (and the debugger's
 # FujiNet trace saw both ways), and comes up again after a power cycle. SKIPs

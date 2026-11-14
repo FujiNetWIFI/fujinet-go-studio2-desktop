@@ -16,6 +16,8 @@
 #include <time.h>
 
 #include "debugger_internal.h"
+#include "studio2memtools.h"
+#include "studio2vidtab.h"
 
 typedef struct {
     char *dst;
@@ -37,9 +39,10 @@ static void out(outbuf *o, const char *fmt, ...)
 
 static const char *const commands[] = {
     "help", "step", "over", "out", "run", "stop", "runto", "scanline", "frame",
-    "break", "bpr", "bpw", "bpin", "bpout", "delete", "enable", "disable", "clear",
+    "break", "bpr", "bpw", "bpa", "bpin", "bpout", "delete", "enable", "disable", "clear",
     "breaks", "print", "regs", "set", "mem", "poke", "video", "io", "keys", "cart",
-    "mailbox", "text", "label", "labels", "disasm", "trace", "save", NULL,
+    "mailbox", "text", "label", "labels", "disasm", "trace", "save", "watch", "unwatch",
+    "find", NULL,
 };
 
 static const char *help_text =
@@ -51,6 +54,7 @@ static const char *help_text =
     "scanline [n] | frame [n]\n"
     "break <addr>[-<end>] [cond]     execute breakpoint\n"
     "bpr | bpw <addr>[-<end>] [cond] read / write breakpoint\n"
+    "bpa <addr>[-<end>] [cond]       read-or-write (Access) breakpoint\n"
     "bpin | bpout <port>[-<end>] [cond]  INP / OUT breakpoint (ports 1-7)\n"
     "delete <id> | enable <id> | disable <id> | clear | breaks\n"
     "print <expr>           e.g. print r3, print [$0900], print {r6}\n"
@@ -62,11 +66,13 @@ static const char *help_text =
     "cart | mailbox | text  the FujiNet cartridge, its mailbox, its text engine\n"
     "label <addr> <name> | labels [file]\n"
     "disasm [addr] [n]\n"
-    "trace [on|off|n]       record / show the last n instructions\n"
+    "trace [on|off|clear|n] record / show the last n instructions\n"
+    "watch [addr|label|lo-hi] | unwatch <n|all>   the watch list\n"
+    "find [hex] <bytes> | find text <string>   search memory (stopped)\n"
     "save <dis|ram|arena|raster|screen|regs> <file>\n"
     "Expressions: $0400 0x400 400h 1024 %1010; registers r0-r15 (r3.0 r3.1 the\n"
     "bytes) pc d b t p x df ie q ef1-ef4; [addr] {addr} (high byte first);\n"
-    "labels; vpos hpos frame cycles keylatch; in a condition, value and addr;\n"
+    "labels; vpos hpos frame cycles keylatch; in a condition, value, old and addr;\n"
     "C operators.\n";
 
 static char *next_tok(char **p)
@@ -182,8 +188,13 @@ static void list_breaks(studio2debug *d, outbuf *o)
     {
         char kinds[16] = "";
         if (bp[i].type & STUDIO2DEBUG_BP_EXEC)  strcat(kinds, "x");
-        if (bp[i].type & STUDIO2DEBUG_BP_READ)  strcat(kinds, "r");
-        if (bp[i].type & STUDIO2DEBUG_BP_WRITE) strcat(kinds, "w");
+        if ((bp[i].type & STUDIO2DEBUG_BP_ACCESS) == STUDIO2DEBUG_BP_ACCESS)
+            strcat(kinds, "a");
+        else
+        {
+            if (bp[i].type & STUDIO2DEBUG_BP_READ)  strcat(kinds, "r");
+            if (bp[i].type & STUDIO2DEBUG_BP_WRITE) strcat(kinds, "w");
+        }
         if (bp[i].type & STUDIO2DEBUG_BP_IN)    strcat(kinds, "i");
         if (bp[i].type & STUDIO2DEBUG_BP_OUT)   strcat(kinds, "o");
         if (bp[i].start == bp[i].end)
@@ -297,6 +308,8 @@ int studio2debug_command(studio2debug *d, const char *command, char *dst, int ds
         add_bp(d, &o, STUDIO2DEBUG_BP_READ, p, 0);
     else if (!strcmp(cmd, "bpw"))
         add_bp(d, &o, STUDIO2DEBUG_BP_WRITE, p, 0);
+    else if (!strcmp(cmd, "bpa"))
+        add_bp(d, &o, STUDIO2DEBUG_BP_ACCESS, p, 0);
     else if (!strcmp(cmd, "bpin"))
         add_bp(d, &o, STUDIO2DEBUG_BP_IN, p, 1);
     else if (!strcmp(cmd, "bpout"))
@@ -378,16 +391,32 @@ int studio2debug_command(studio2debug *d, const char *command, char *dst, int ds
     }
     else if (!strcmp(cmd, "video"))
     {
-        studio2debug_video vd;
-        studio2debug_video_get(d, &vd);
-        out(&o, "CDP1861: display %s  INT %d  EFx %d  DMA OUT %d\n", vd.display_on ? "on" : "off",
-            vd.int_line, vd.efx_line, vd.dma_line);
-        out(&o, "beam line %d dot %d%s  frame %u\n", vd.vpos, vd.hpos,
-            vd.in_display ? " (display lines)" : "", vd.frame);
-        out(&o, "DMA pointer R0=$%04X  last $%04X  %llu bytes  short bursts %u\n", vd.dma_pointer,
-            vd.last_dma_addr, (unsigned long long)vd.dma_bytes, vd.short_lines);
-        out(&o, "next INT event line %d, next EFx event line %d  display-on strobes %u\n",
-            vd.next_int_line, vd.next_efx_line, vd.inp1_count);
+        /* a short-lived Video tab: it asks for captures only while it exists */
+        char *arg = next_tok(&p);
+        int section = STUDIO2VID_S_REGISTERS;
+        if (arg)
+        {
+            section = studio2vid_section_from_name(arg);
+            if (section < 0)
+            {
+                out(&o, "video: pixel, registers, colours, lines or timing\n");
+                return o.len;
+            }
+        }
+        studio2vid_tab *tab = studio2vid_tab_new(d);
+        if (!tab)
+            out(&o, "video: not available\n");
+        else
+        {
+            static char text[16384];
+            studio2vid_tab_refresh(tab, 1);
+            int len = studio2vid_tab_text(tab, section, text, (int)sizeof text);
+            studio2vid_tab_free(tab);
+            if (len > 0)
+                out(&o, "%s\n", text);
+            else
+                out(&o, "video: no frame captured yet (stop the machine)\n");
+        }
     }
     else if (!strcmp(cmd, "io") || !strcmp(cmd, "keys"))
     {
@@ -416,6 +445,16 @@ int studio2debug_command(studio2debug *d, const char *command, char *dst, int ds
             out(&o, "\nINP 1 (display on) %u times  BIOS: %s%s\n", io.inp1_count,
                 io.have_bios ? "imported" : "the stand-in",
                 io.stub_parked ? " (parked: a game needs the BIOS)" : "");
+            /* the Cart & I/O tab lays out studio2debug_memory_map itself, so
+             * it is printed once, here */
+            {
+                studio2debug_region map[48];
+                int count = studio2debug_memory_map(d, map, 48);
+                out(&o, "Memory map\n");
+                for (int i = 0; i < count; i++)
+                    out(&o, "  $%04X-$%04X  %s%s%s\n", map[i].lo, map[i].hi, map[i].name,
+                        map[i].readable ? "" : " (no read)", map[i].writable ? "" : " (read only)");
+            }
         }
     }
     else if (!strcmp(cmd, "cart") || !strcmp(cmd, "mailbox") || !strcmp(cmd, "text"))
@@ -538,6 +577,66 @@ int studio2debug_command(studio2debug *d, const char *command, char *dst, int ds
                     l.disasm, tr[i].p, tr[i].x, tr[i].d, tr[i].df, tr[i].rx);
             }
         }
+    }
+    else if (!strcmp(cmd, "watch"))
+    {
+        char *text = rest_of(p);
+        if (*text && studio2watch_add(text) < 0)
+            out(&o, "no room for another watch\n");
+        if (!studio2watch_count())
+            out(&o, "no watches (watch <addr|label|lo-hi>)\n");
+        else
+            for (int i = 0; i < studio2watch_count(); i++)
+            {
+                char line[160];
+                studio2watch_format(d, i, line, sizeof line);
+                out(&o, "%2d  %s\n", i, line);
+            }
+    }
+    else if (!strcmp(cmd, "unwatch"))
+    {
+        char *t = next_tok(&p);
+        if (t && !strcmp(t, "all"))
+            studio2watch_clear();
+        else if (t && eval(d, &o, t, &v))
+            return o.len;
+        else if (t)
+            studio2watch_remove((int)v);
+        else
+            out(&o, "unwatch <n|all>\n");
+    }
+    else if (!strcmp(cmd, "find"))
+    {
+        char *t = next_tok(&p);
+        int kind = STUDIO2SEARCH_HEX, count = 0, flags = 0, found;
+        uint8_t pat[STUDIO2SEARCH_MAX], mask;
+        uint16_t hit[32];
+        char joined[160];
+        if (t && !strcmp(t, "text"))
+        {
+            kind = STUDIO2SEARCH_TEXT;
+            t = rest_of(p);
+        }
+        else if (t && !strcmp(t, "hex"))
+            t = rest_of(p);
+        else if (t)
+        {
+            snprintf(joined, sizeof joined, "%s %s", t, rest_of(p));
+            t = joined;
+        }
+        if (!t || !*t || !studio2search_parse(kind, t, pat, &count, &mask, &flags))
+        {
+            out(&o, "find [hex] <bytes> | find text <string>\n");
+            return o.len;
+        }
+        found = studio2debug_search(d, pat, count, mask, flags, 0, 0xffff, hit, 32);
+        if (found < 0)
+            out(&o, "stop the machine first\n");
+        else if (!found)
+            out(&o, "not found\n");
+        else
+            for (int i = 0; i < found; i++)
+                out(&o, "$%04X\n", hit[i]);
     }
     else if (!strcmp(cmd, "save"))
     {

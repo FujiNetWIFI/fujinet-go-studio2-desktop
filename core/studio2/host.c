@@ -13,6 +13,9 @@
 
 #include "host.h"
 
+#include "s2map.h"
+#include "studio2vidcap.h"
+
 #include <pthread.h>
 #include <sched.h>
 #if defined(__APPLE__)
@@ -179,6 +182,149 @@ void studio2_host_publish_frame(void)
     static uint32_t fb[STUDIO2_FB_WIDTH * STUDIO2_FB_HEIGHT];
     studio2_machine_snapshot(&s_machine, fb);
     frame_publish(fb);
+}
+
+/* ---- once-a-frame capture for the debugger's Video tab ---- */
+_Static_assert(STUDIO2VID_RASTER_W == CDP1861_SCREEN_WIDTH
+               && STUDIO2VID_RASTER_H == CDP1861_TOTAL_SCANLINES
+               && STUDIO2VID_VIS_X0 == CDP1861_VIS_X0 && STUDIO2VID_VIS_Y0 == CDP1861_VIS_Y0
+               && STUDIO2VID_VIS_W == CDP1861_VIS_W && STUDIO2VID_VIS_H == CDP1861_VIS_H
+               && STUDIO2VID_DISP_Y0 == CDP1861_SCANLINE_DISPLAY_START
+               && STUDIO2VID_DISP_Y1 == CDP1861_SCANLINE_DISPLAY_END,
+               "studio2vidcap.h's geometry must match the 1861's");
+
+static pthread_mutex_t s_cap_lock = PTHREAD_MUTEX_INITIALIZER;
+static studio2vid_capture *s_cap[2];        /* allocated by the first enable */
+static int s_cap_front;                     /* the one readers copy */
+static uint64_t s_cap_serial;
+static atomic_int s_cap_users;
+
+void studio2_host_capture_enable(int on)
+{
+    if (on)
+    {
+        pthread_mutex_lock(&s_cap_lock);
+        for (int slot = 0; slot < 2; slot++)
+            if (!s_cap[slot])
+                s_cap[slot] = calloc(1, sizeof *s_cap[slot]);
+        pthread_mutex_unlock(&s_cap_lock);
+        atomic_fetch_add(&s_cap_users, 1);
+    }
+    else if (atomic_load(&s_cap_users) > 0)
+        atomic_fetch_sub(&s_cap_users, 1);
+}
+
+static uint8_t source_of(const uint8_t types[256], uint16_t addr)
+{
+    switch (types[addr >> 8])
+    {
+    case S2PG_RASTER: return STUDIO2VID_SRC_RASTER;
+    case S2PG_ROM:
+    case S2PG_HOT:    return STUDIO2VID_SRC_CART;
+    default:          break;
+    }
+    if (addr < 0x0400)
+        return STUDIO2VID_SRC_BIOS;
+    if (addr >= 0x0800 && !(addr & 0x0200))
+        return STUDIO2VID_SRC_RAM;
+    return STUDIO2VID_SRC_OPEN;
+}
+
+/* finished: the machine has just run a frame out, so the lines of the frame
+ * before the one the clock is now in are this frame's. */
+static void capture_fill(const studio2_machine_t *m, studio2vid_capture *dst, int finished)
+{
+    const cdp1861_t *vdc = &m->vdc;
+    const uint32_t cur = (uint32_t)(m->cycles / CDP1861_FRAME_CLOCKS);
+    const uint32_t fresh = finished ? cur : cur + 1u;
+    uint8_t types[256];
+
+    memset(types, 0, sizeof types);
+    if (m->cart)
+        studio2_cart_page_types(m->cart, types);
+
+    for (int pix = 0; pix < STUDIO2VID_RASTER_W * STUDIO2VID_RASTER_H; pix++)
+        dst->bits[pix] = (vdc->bitmap[pix] & 0xffffffu) != 0;
+    dst->short_lines = 0;
+    for (int row = 0; row < STUDIO2VID_RASTER_H; row++)
+    {
+        const cdp1861_line_t *rec = &vdc->line_regs[row];
+        studio2vid_line *out = &dst->lines[row];
+
+        memset(out, 0, sizeof *out);
+        if (rec->stamp == fresh || (rec->stamp != 0 && rec->stamp + 1u == fresh))
+        {
+            out->valid = 1;
+            out->fresh = rec->stamp == fresh;
+            out->count = rec->count;
+            out->src = source_of(types, rec->addr);
+            out->hpos = rec->hpos;
+            out->flags = rec->flags;
+            out->addr = rec->addr;
+            memcpy(out->data, rec->data, sizeof out->data);
+        }
+        if (out->fresh && row >= STUDIO2VID_DISP_Y0 && row < STUDIO2VID_DISP_Y1 && out->count != 8)
+            dst->short_lines++;
+    }
+    dst->disp = vdc->disp != 0;
+    dst->blank = m->stub_parked;
+    dst->int_line = vdc->int_line;
+    dst->efx_line = vdc->efx_line;
+    dst->dma_line = vdc->dma_line;
+    dst->dmaout = vdc->dmaout;
+    dst->vpos = cdp1861_vpos(m->cycles);
+    dst->hpos = cdp1861_hpos(m->cycles);
+    dst->beam_row = finished ? STUDIO2VID_RASTER_H : dst->vpos;
+    dst->r0 = m->cpu.r[0];
+    dst->last_dma_addr = vdc->last_dma_addr;
+    dst->cycles = m->cycles;
+    dst->frame = m->frame_count;
+    dst->dma_bytes = vdc->dma_bytes;
+    dst->inp1_count = m->inp1_count;
+    dst->int_next = vdc->int_next;
+    dst->efx_next = vdc->efx_next;
+    dst->dma_next = vdc->dma_next;
+    dst->cpu_p = m->cpu.p;
+    dst->cpu_ie = m->cpu.ie;
+}
+
+void studio2_host_capture_fill(const studio2_machine_t *m, struct studio2vid_capture *dst)
+{
+    capture_fill(m, dst, 0);
+}
+
+/* Machine thread, right after a frame ran: fill the back buffer, then swap
+ * it in under the lock. */
+static void capture_frame(const studio2_machine_t *m)
+{
+    studio2vid_capture *back;
+
+    pthread_mutex_lock(&s_cap_lock);
+    back = s_cap[1 - s_cap_front];
+    pthread_mutex_unlock(&s_cap_lock);
+    if (!back)
+        return;
+    capture_fill(m, back, 1);
+    pthread_mutex_lock(&s_cap_lock);
+    back->serial = ++s_cap_serial;
+    s_cap_front = 1 - s_cap_front;
+    pthread_mutex_unlock(&s_cap_lock);
+}
+
+int studio2_host_capture_get(struct studio2vid_capture *dst, uint64_t *serial_inout)
+{
+    int changed = 0;
+
+    pthread_mutex_lock(&s_cap_lock);
+    if (s_cap[s_cap_front] && s_cap[s_cap_front]->serial != 0
+        && s_cap[s_cap_front]->serial != *serial_inout)
+    {
+        memcpy(dst, s_cap[s_cap_front], sizeof *dst);
+        *serial_inout = s_cap[s_cap_front]->serial;
+        changed = 1;
+    }
+    pthread_mutex_unlock(&s_cap_lock);
+    return changed;
 }
 
 /* ---- audio ring: interleaved stereo frames ---- */
@@ -513,6 +659,8 @@ static void *machine_thread(void *arg)
 
         studio2_machine_run_frame(&s_machine);
         studio2_cart_frame(s_cart);
+        if (atomic_load(&s_cap_users) > 0)
+            capture_frame(&s_machine);
         frame_publish(s_machine.fb);
         audio_publish(s_machine.out, s_machine.out_frames);
         s_machine.out_frames = 0;

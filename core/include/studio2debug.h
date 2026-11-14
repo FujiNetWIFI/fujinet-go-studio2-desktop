@@ -44,10 +44,16 @@ int  studio2debug_is_attached(studio2debug *d);
 int  studio2debug_is_stopped(studio2debug *d);
 void studio2debug_stop(studio2debug *d);         /* break at the next instruction */
 void studio2debug_resume(studio2debug *d);       /* "run" */
-/* Why the machine last stopped ("stopped", "breakpoint: exec $0412",
- * "write $0900 = $12", "step", "frame", ...) and the PC, -1 if none.
- * Returns length. */
+/* Why the machine last stopped ("stopped at $0412", "breakpoint: exec $0412",
+ * "wrote $0810 = $12 (was $11)", "step at $0412", "frame at $0412", ...) and
+ * the PC, -1 if none. A reason without an address of its own gets " at
+ * $xxxx". Returns length. studio2debug_is_stopped() turns true only once the
+ * reason for that stop is recorded, so a poller that sees it stopped reads
+ * the right reason. */
 int  studio2debug_stop_reason(studio2debug *d, char *dst, int dstsz, int *address);
+/* Bumped by every stop (pause, breakpoint, step), after its reason is
+ * recorded; frontends recentre their views on the PC when it changes. */
+uint64_t studio2debug_stop_serial(studio2debug *d);
 /* Bumped whenever a command ran or the machine stopped/resumed, so a window
  * knows when to refresh. */
 unsigned studio2debug_generation(studio2debug *d);
@@ -55,16 +61,18 @@ unsigned studio2debug_generation(studio2debug *d);
 /* ---- the prompt ------------------------------------------------------------ */
 /* Run one command; "help" lists them: step [n], over, out, frame [n],
  * scanline [n], run, stop, runto <addr>, break <addr> [cond], bpr/bpw
- * <addr>[-<end>] [cond], bpin/bpout <port>[-<end>] [cond], delete <id|addr>,
+ * <addr>[-<end>] [cond], bpa <addr>[-<end>] [cond] (read or write),
+ * bpin/bpout <port>[-<end>] [cond], delete <id|addr>,
  * enable/disable <id>, clear, breaks, print <expr>, regs, set <reg> <expr>,
  * mem <addr> [len], poke <addr> <val...>, video, io, keys, cart, mailbox,
  * text, label <addr> <name>, labels [file], disasm [addr] [n], trace
- * [on|off|n], save <kind> <file>. Expressions: numbers ($0400, 0x400, 400h,
+ * [on|off|clear|n], watch [expr], unwatch <n|all>, find [hex] <bytes> | find
+ * text <string>, save <kind> <file>. Expressions: numbers ($0400, 0x400, 400h,
  * 1024), registers (r0-r15, their halves r3.0 / r3.1, pc d b t p x df ie q,
  * ef1-ef4), [addr] byte and {addr} word reads (high byte first, as the
  * 1802 keeps them), labels, vpos hpos frame cycles keylatch, and in a
- * breakpoint condition `value` and `addr` for the access; C operators with C
- * precedence. Output text into dst; returns its length. */
+ * breakpoint condition `value`, `addr` and `old` (the byte before a write)
+ * for the access; C operators with C precedence. Output text into dst; returns its length. */
 int  studio2debug_command(studio2debug *d, const char *command, char *dst, int dstsz);
 /* Completions for a prefix (commands, registers and labels), one per line.
  * Returns the count. */
@@ -170,7 +178,8 @@ void studio2debug_ram_get(studio2debug *d, uint8_t out[512]);
 typedef struct {
     uint16_t address;
     int is_pc;
-    int has_breakpoint;
+    int has_breakpoint;      /* an enabled execute breakpoint covers it */
+    int bp_disabled;         /* only a disabled one does (the grey dot) */
     int length;
     char bytes[16];
     char label[48];
@@ -244,7 +253,9 @@ int  studio2debug_fujinet_state(studio2debug *d, char *dst, int dstsz);
 /* ---- breakpoints -------------------------------------------------------------- */
 typedef enum {
     STUDIO2DEBUG_BP_EXEC = 1, STUDIO2DEBUG_BP_READ = 2, STUDIO2DEBUG_BP_WRITE = 4,
-    STUDIO2DEBUG_BP_IN = 8, STUDIO2DEBUG_BP_OUT = 16
+    STUDIO2DEBUG_BP_IN = 8, STUDIO2DEBUG_BP_OUT = 16,
+    /* Read and write as one entry ("Access"): READ | WRITE */
+    STUDIO2DEBUG_BP_ACCESS = 6
 } studio2debug_bp_type;
 typedef struct {
     int id;
@@ -265,6 +276,21 @@ void studio2debug_breakpoint_remove(studio2debug *d, int id);
 void studio2debug_breakpoint_enable(studio2debug *d, int id, int enabled);
 int  studio2debug_breakpoint_list(studio2debug *d, studio2debug_breakpoint *out, int max);
 void studio2debug_breakpoint_clear(studio2debug *d);
+/* Zero every hit count. */
+void studio2debug_breakpoint_clear_hits(studio2debug *d);
+
+/* ---- symbols (built-ins and loaded, for a Symbols tab) ---------------------- */
+int  studio2debug_symbols_count(studio2debug *d);
+/* Entry `index` (0 .. count-1): address, name and the bank (-1 = any).
+ * Returns 1, or 0 past the end. The order is the table's; it can change when
+ * symbols are loaded, cleared or looked up. */
+int  studio2debug_symbols_get(studio2debug *d, int index, uint16_t *addr, char *name,
+                              int namesz, int *bank);
+/* Indices of the entries whose name contains `text` (case-insensitive; empty
+ * matches all), ordered by address then name. Returns the count written. */
+int  studio2debug_symbols_filter(studio2debug *d, const char *text, int *out, int max);
+/* Drop every loaded symbol and user label; the built-ins stay. */
+void studio2debug_clear_symbols(studio2debug *d);
 
 /* ---- the trace ring ----------------------------------------------------------- */
 typedef struct {
@@ -274,12 +300,54 @@ typedef struct {
     uint8_t len, bytes[3];
     uint64_t cycles;
     int16_t vpos, hpos;
+    uint8_t treg;            /* the T register */
+    int16_t bank;            /* the cartridge bank shown at $C400, -1 when none */
+    uint32_t frame;
 } studio2debug_trace;
+/* The ring keeps the newest 65536; it is allocated on the first enable.
+ * The instruction hook does not fire while the CPU sits in IDL ($00): an
+ * idling program records (and breaks, steps, scanline-steps) nothing until
+ * an interrupt or DMA wakes it. That is how the hook is wired, not a bug in
+ * the trace. */
 void studio2debug_trace_enable(studio2debug *d, int on);
 int  studio2debug_trace_enabled(studio2debug *d);
 /* Newest first; returns entries copied. */
 int  studio2debug_trace_read(studio2debug *d, studio2debug_trace *out, int max);
 void studio2debug_trace_clear(studio2debug *d);
+/* Entries held. */
+int  studio2debug_trace_count(studio2debug *d);
+/* "0412  LDN R8          D=00 DF=0 P=3 X=2 T=00 Q=0 IE=1 R(X)=09F8". Returns the length. */
+int  studio2debug_trace_format(const studio2debug_trace *t, char *dst, int dstsz);
+enum { STUDIO2DEBUG_TRACE_ALL = 0, STUDIO2DEBUG_TRACE_BRANCHES, STUDIO2DEBUG_TRACE_RANGE };
+/* 1 if the entry passes the filter (BRANCHES: branches, skips, calls and
+ * returns; RANGE: pc in lo..hi). */
+int  studio2debug_trace_match(const studio2debug_trace *t, int filter, uint16_t lo,
+                              uint16_t hi);
+
+/* ---- memory search and the memory map ---------------------------------------- */
+#define STUDIO2DEBUG_SEARCH_NOCASE 1
+/* Stopped only (-1 while running). Finds up to max start addresses in
+ * from..to (bounding the START address; the match may run past `to`) of the
+ * CPU's 64K as mapped now, where (mem & mask) == (pat & mask) for all n
+ * bytes. Returns the count. */
+int  studio2debug_search(studio2debug *d, const uint8_t *pat, int patlen, uint8_t mask,
+                         int flags, uint16_t from, uint16_t to, uint16_t *out, int max);
+/* The next match after `from` (before it if backward), wrapping once.
+ * Returns 1 and *found, 0 for none, -1 while running. */
+int  studio2debug_search_next(studio2debug *d, const uint8_t *pat, int patlen, uint8_t mask,
+                              int flags, uint16_t from, int backward, uint16_t *found);
+
+typedef struct {
+    uint16_t lo, hi;
+    int readable, writable;
+    char name[48];
+} studio2debug_region;
+/* Ordered, gap-free regions covering $0000-$FFFF as mapped now: the BIOS,
+ * the cartridge's pages, console RAM and its mirrors, open bus, the bank
+ * window ("bank n/N", n from 0), the mailbox arena, hotspots and the raster.
+ * The console's RAM mirror above $0C00 (512 bytes of every 1K) is one entry.
+ * Returns the count (a console alone: about 8; with an app, under 20). */
+int  studio2debug_memory_map(studio2debug *d, studio2debug_region *out, int max);
 
 /* ---- files -------------------------------------------------------------------- */
 /* Save with the path a native file picker supplied. kind: "dis" (the BIOS

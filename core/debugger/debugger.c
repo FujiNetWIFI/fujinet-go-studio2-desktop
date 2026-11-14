@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #include "debugger_internal.h"
@@ -48,7 +49,7 @@
 #include "s2map.h"
 
 #define MAX_BP     128
-#define TRACE_N    4096
+#define TRACE_N    65536
 
 enum { MODE_RUN = 0, MODE_STEP, MODE_OVER, MODE_OUT, MODE_RUNTO, MODE_SCANLINE, MODE_FRAME };
 
@@ -71,22 +72,27 @@ struct studio2debug {
     char reason[128];
     int reason_addr;
     atomic_uint generation;
+    atomic_ullong stop_serial;   /* bumped by every park, once its reason is recorded */
 
     studio2debug_breakpoint bp[MAX_BP];
     int nbp, next_id;
     uint8_t map_exec[65536];     /* nonzero: an enabled exec bp covers it */
     uint8_t map_mem[65536];      /* STUDIO2DEBUG_BP_READ / _WRITE bits */
     uint8_t map_io[8];           /* STUDIO2DEBUG_BP_IN / _OUT bits */
+    uint8_t map_exec_off[65536]; /* nonzero: only a disabled exec bp covers it */
     atomic_int break_pending;
     char break_reason[128];
     int break_addr;
 
     /* the access a condition sees as `value` / `addr` */
-    long acc_value, acc_addr;
+    long acc_value, acc_addr, acc_old;
     int in_access;
 
+    /* the instruction trace: its own lock, so a window reading it never waits
+     * for a frame; the ring is allocated on the first enable */
     atomic_int trace_on;
-    studio2debug_trace ring[TRACE_N];
+    pthread_mutex_t trace_mtx;
+    studio2debug_trace *ring;
     int ring_head, ring_count;
 
     symtab syms;
@@ -126,7 +132,7 @@ const char *const studio2debug_reg_names[] = {
     "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11",
     "r12", "r13", "r14", "r15", "pc", "p", "x", "d", "b", "t", "df", "ie", "q",
     "ef1", "ef2", "ef3", "ef4", "vpos", "hpos", "frame", "cycles", "keylatch",
-    "value", "addr", NULL,
+    "value", "old", "addr", NULL,
 };
 
 static uint8_t expr_read(void *user, uint16_t addr)
@@ -174,6 +180,7 @@ static int expr_name(void *user, const char *name, long *out)
     int reg, half;
 
     if (!strcmp(name, "value") && d->in_access) { *out = d->acc_value; return 1; }
+    if (!strcmp(name, "old") && d->in_access) { *out = d->acc_old; return 1; }
     if (!strcmp(name, "addr") && d->in_access) { *out = d->acc_addr; return 1; }
     if (m)
     {
@@ -228,27 +235,47 @@ int studio2debug_eval(studio2debug *d, const char *text, long *out, char *err, i
 
 static void trace_record(studio2debug *d, studio2_machine_t *m, uint16_t pc)
 {
-    studio2debug_trace *t = &d->ring[d->ring_head];
+    studio2debug_trace *ent;
     const cdp1802_t *c = &m->cpu;
+    int bank = -1;
 
-    t->pc = pc;
-    t->p = c->p;
-    t->x = c->x;
-    t->d = c->d;
-    t->df = c->df;
-    t->ie = c->ie;
-    t->q = c->q;
-    t->rx = c->r[c->x];
-    t->bytes[0] = studio2_machine_peek(m, pc);
-    t->len = (uint8_t)cdp1802_length(t->bytes[0]);
-    t->bytes[1] = studio2_machine_peek(m, (uint16_t)(pc + 1));
-    t->bytes[2] = studio2_machine_peek(m, (uint16_t)(pc + 2));
-    t->cycles = m->cycles;
-    t->vpos = (int16_t)cdp1861_vpos(m->cycles);
-    t->hpos = (int16_t)cdp1861_hpos(m->cycles);
+    /* the bank window's own pages: which bank is shown */
+    if (pc >= 0xc400 && pc < 0xd000 && m->cart)
+    {
+        studio2_cart_status_t st;
+        studio2_cart_status(m->cart, &st);
+        if (st.nbanks)
+            bank = st.bank;
+    }
+    pthread_mutex_lock(&d->trace_mtx);
+    if (!d->ring)
+    {
+        pthread_mutex_unlock(&d->trace_mtx);
+        return;
+    }
+    ent = &d->ring[d->ring_head];
+    ent->pc = pc;
+    ent->p = c->p;
+    ent->x = c->x;
+    ent->d = c->d;
+    ent->treg = c->t;
+    ent->df = c->df;
+    ent->ie = c->ie;
+    ent->q = c->q;
+    ent->rx = c->r[c->x];
+    ent->bytes[0] = studio2_machine_peek(m, pc);
+    ent->len = (uint8_t)cdp1802_length(ent->bytes[0]);
+    ent->bytes[1] = studio2_machine_peek(m, (uint16_t)(pc + 1));
+    ent->bytes[2] = studio2_machine_peek(m, (uint16_t)(pc + 2));
+    ent->cycles = m->cycles;
+    ent->vpos = (int16_t)cdp1861_vpos(m->cycles);
+    ent->hpos = (int16_t)cdp1861_hpos(m->cycles);
+    ent->bank = (int16_t)bank;
+    ent->frame = (uint32_t)m->frame_count;
     d->ring_head = (d->ring_head + 1) % TRACE_N;
     if (d->ring_count < TRACE_N)
         d->ring_count++;
+    pthread_mutex_unlock(&d->trace_mtx);
 }
 
 static int cond_true(studio2debug *d, const studio2debug_breakpoint *b)
@@ -275,6 +302,9 @@ static void park(studio2debug *d, studio2_machine_t *m, uint16_t pc, const char 
     d->reason_addr = pc;
     atomic_store(&d->mode, MODE_RUN);
     atomic_store(&d->stop_req, 0);
+    /* the reason is recorded above; only now may a poller see "stopped", and
+     * the serial moves before it so a stop is never seen with the old one */
+    atomic_fetch_add(&d->stop_serial, 1);
     atomic_store(&d->stopped, 1);
     bump(d);
     /* parked, the machine is the windows' */
@@ -316,6 +346,10 @@ static void instr_hook(studio2_machine_t *m, void *user)
     {
         int hit = 0;
         pthread_mutex_lock(&d->lock);
+        d->acc_addr = pc;
+        d->acc_value = studio2_machine_peek(m, pc);
+        d->acc_old = d->acc_value;
+        d->in_access = 1;
         for (int i = 0; i < d->nbp; i++)
         {
             studio2debug_breakpoint *b = &d->bp[i];
@@ -327,6 +361,7 @@ static void instr_hook(studio2_machine_t *m, void *user)
                 break;
             }
         }
+        d->in_access = 0;
         pthread_mutex_unlock(&d->lock);
         if (hit)
         {
@@ -377,9 +412,9 @@ static void bus_hook(studio2_machine_t *m, void *user, int kind, uint16_t addr, 
 {
     studio2debug *d = user;
     int type, bits;
+    long old = data;
     const char *verb;
 
-    (void)m;
     switch (kind)
     {
     case STUDIO2_BUS_MEMR: type = STUDIO2DEBUG_BP_READ;  bits = d->map_mem[addr]; verb = "read"; break;
@@ -388,12 +423,15 @@ static void bus_hook(studio2_machine_t *m, void *user, int kind, uint16_t addr, 
     case STUDIO2_BUS_IOW:  type = STUDIO2DEBUG_BP_OUT;   bits = d->map_io[addr & 7]; verb = "OUT"; break;
     default: return;
     }
+    if (kind == STUDIO2_BUS_MEMW)
+        old = m->last_old;        /* the byte the store replaced, noted before it */
     if (!(bits & type) || atomic_load(&d->break_pending))
         return;
 
     pthread_mutex_lock(&d->lock);
     d->acc_value = data;
     d->acc_addr = addr;
+    d->acc_old = old;
     d->in_access = 1;
     for (int i = 0; i < d->nbp; i++)
     {
@@ -404,6 +442,9 @@ static void bus_hook(studio2_machine_t *m, void *user, int kind, uint16_t addr, 
             if (kind == STUDIO2_BUS_IOR || kind == STUDIO2_BUS_IOW)
                 snprintf(d->break_reason, sizeof d->break_reason, "%s %d %s $%02X", verb,
                          addr & 7, kind == STUDIO2_BUS_IOR ? "->" : "<-", data);
+            else if (kind == STUDIO2_BUS_MEMW)
+                snprintf(d->break_reason, sizeof d->break_reason, "wrote $%04X = $%02X (was $%02lX)",
+                         addr, data, old & 0xff);
             else
                 snprintf(d->break_reason, sizeof d->break_reason, "%s $%04X = $%02X", verb, addr, data);
             atomic_store(&d->break_pending, 1);
@@ -435,13 +476,19 @@ static uint8_t watch_bits(studio2debug *d)
 static void rebuild_locked(studio2debug *d)
 {
     memset(d->map_exec, 0, sizeof d->map_exec);
+    memset(d->map_exec_off, 0, sizeof d->map_exec_off);
     memset(d->map_mem, 0, sizeof d->map_mem);
     memset(d->map_io, 0, sizeof d->map_io);
     for (int i = 0; i < d->nbp; i++)
     {
         const studio2debug_breakpoint *b = &d->bp[i];
         if (!b->enabled)
+        {
+            if (b->type & STUDIO2DEBUG_BP_EXEC)
+                for (unsigned a = b->start; a <= b->end && a <= 0xffff; a++)
+                    d->map_exec_off[a] = 1;
             continue;
+        }
         for (unsigned a = b->start; a <= b->end && a <= 0xffff; a++)
         {
             if (b->type & STUDIO2DEBUG_BP_EXEC)
@@ -466,6 +513,7 @@ studio2debug *studio2debug_create(void)
     pthread_mutex_init(&d->lock, NULL);
     pthread_cond_init(&d->cond, NULL);
     pthread_mutex_init(&d->fuji_lock, NULL);
+    pthread_mutex_init(&d->trace_mtx, NULL);
     fujitrace_init(&d->fuji);
     d->next_id = 1;
     d->reason_addr = -1;
@@ -487,6 +535,8 @@ void studio2debug_free(studio2debug *d)
     pthread_mutex_destroy(&d->lock);
     pthread_cond_destroy(&d->cond);
     pthread_mutex_destroy(&d->fuji_lock);
+    pthread_mutex_destroy(&d->trace_mtx);
+    free(d->ring);
     free(d);
 }
 
@@ -641,11 +691,29 @@ int studio2debug_stop_reason(studio2debug *d, char *dst, int dstsz, int *address
     if (!d || !dst || dstsz <= 0)
         return 0;
     pthread_mutex_lock(&d->lock);
-    n = snprintf(dst, (size_t)dstsz, "%s", atomic_load(&d->stopped) ? d->reason : "running");
-    if (address)
-        *address = atomic_load(&d->stopped) ? d->reason_addr : -1;
+    if (atomic_load(&d->stopped))
+    {
+        n = snprintf(dst, (size_t)dstsz, "%s", d->reason);
+        if (d->reason_addr >= 0 && !strchr(d->reason, '$') && n < dstsz)
+            n += snprintf(dst + n, (size_t)(dstsz - n), " at $%04X", d->reason_addr);
+        if (n >= dstsz)
+            n = dstsz - 1;
+        if (address)
+            *address = d->reason_addr;
+    }
+    else
+    {
+        n = snprintf(dst, (size_t)dstsz, "running");
+        if (address)
+            *address = -1;
+    }
     pthread_mutex_unlock(&d->lock);
     return n;
+}
+
+uint64_t studio2debug_stop_serial(studio2debug *d)
+{
+    return d ? (uint64_t)atomic_load(&d->stop_serial) : 0;
 }
 
 unsigned studio2debug_generation(studio2debug *d)
@@ -1136,6 +1204,7 @@ static void fill_line(studio2debug *d, studio2_machine_t *m, uint16_t addr, stud
     l->address = addr;
     l->is_pc = addr == pc;
     l->has_breakpoint = d->map_exec[addr] != 0;
+    l->bp_disabled = !l->has_breakpoint && d->map_exec_off[addr] != 0;
     for (int i = 0, o = 0; i < l->length && o < (int)sizeof l->bytes - 3; i++)
         o += snprintf(l->bytes + o, sizeof l->bytes - (size_t)o, "%s%02X", i ? " " : "",
                       studio2_machine_peek(m, (uint16_t)(addr + i)));
@@ -1505,15 +1574,114 @@ int studio2debug_breakpoint_toggle(studio2debug *d, uint16_t addr)
     return studio2debug_breakpoint_add(d, STUDIO2DEBUG_BP_EXEC, addr, addr, NULL) >= 0;
 }
 
+void studio2debug_breakpoint_clear_hits(studio2debug *d)
+{
+    if (!d)
+        return;
+    pthread_mutex_lock(&d->lock);
+    for (int i = 0; i < d->nbp; i++)
+        d->bp[i].hits = 0;
+    bump(d);
+    pthread_mutex_unlock(&d->lock);
+}
+
+/* ---- symbols -------------------------------------------------------------------- */
+
+int studio2debug_symbols_count(studio2debug *d)
+{
+    return d ? d->syms.n : 0;
+}
+
+int studio2debug_symbols_get(studio2debug *d, int index, uint16_t *addr, char *name, int namesz,
+                             int *bank)
+{
+    const sym_entry *entry;
+
+    if (!d || index < 0 || index >= d->syms.n)
+        return 0;
+    entry = &d->syms.v[index];
+    if (addr)
+        *addr = entry->addr;
+    if (name && namesz > 0)
+        snprintf(name, (size_t)namesz, "%s", entry->name);
+    if (bank)
+        *bank = entry->bank;
+    return 1;
+}
+
+typedef struct { uint16_t addr; const char *name; int index; } sym_pick;
+
+static int sym_pick_cmp(const void *pa, const void *pb)
+{
+    const sym_pick *lhs = pa, *rhs = pb;
+    if (lhs->addr != rhs->addr)
+        return lhs->addr < rhs->addr ? -1 : 1;
+    return strcasecmp(lhs->name, rhs->name);
+}
+
+static int contains_nocase(const char *hay, const char *needle)
+{
+    const size_t len = strlen(needle);
+    if (!len)
+        return 1;
+    for (; *hay; hay++)
+        if (!strncasecmp(hay, needle, len))
+            return 1;
+    return 0;
+}
+
+int studio2debug_symbols_filter(studio2debug *d, const char *text, int *out, int max)
+{
+    sym_pick *pick;
+    int count = 0;
+
+    if (!d || !out || max <= 0 || d->syms.n <= 0)
+        return 0;
+    pick = malloc((size_t)d->syms.n * sizeof *pick);
+    if (!pick)
+        return 0;
+    for (int i = 0; i < d->syms.n; i++)
+        if (contains_nocase(d->syms.v[i].name, text ? text : ""))
+        {
+            pick[count].addr = d->syms.v[i].addr;
+            pick[count].name = d->syms.v[i].name;
+            pick[count].index = i;
+            count++;
+        }
+    qsort(pick, (size_t)count, sizeof *pick, sym_pick_cmp);
+    if (count > max)
+        count = max;
+    for (int i = 0; i < count; i++)
+        out[i] = pick[i].index;
+    free(pick);
+    return count;
+}
+
+void studio2debug_clear_symbols(studio2debug *d)
+{
+    if (!d)
+        return;
+    symtab_clear_user(&d->syms);
+    bump(d);
+}
+
 /* ---- trace ---------------------------------------------------------------------- */
 
 void studio2debug_trace_enable(studio2debug *d, int on)
 {
-    if (d)
+    if (!d)
+        return;
+    if (on)
     {
-        atomic_store(&d->trace_on, on != 0);
-        bump(d);
+        pthread_mutex_lock(&d->trace_mtx);
+        if (!d->ring)
+            d->ring = calloc(TRACE_N, sizeof *d->ring);
+        if (!d->ring)
+            on = 0;
+        pthread_mutex_unlock(&d->trace_mtx);
     }
+    atomic_store(&d->trace_on, on != 0);
+    bump(d);
 }
 
 int studio2debug_trace_enabled(studio2debug *d)
@@ -1521,17 +1689,18 @@ int studio2debug_trace_enabled(studio2debug *d)
     return d && atomic_load(&d->trace_on);
 }
 
-/* The ring is written by the instruction hook, under the run lock. */
+/* The ring is written by the instruction hook under trace_mtx, so a reader
+ * needs that lock and not the run lock. */
 int studio2debug_trace_read(studio2debug *d, studio2debug_trace *out, int max)
 {
     int n;
-    if (!d)
+    if (!d || max <= 0)
         return 0;
-    studio2_host_lock();
-    n = d->ring_count < max ? d->ring_count : max;
+    pthread_mutex_lock(&d->trace_mtx);
+    n = !d->ring ? 0 : d->ring_count < max ? d->ring_count : max;
     for (int i = 0; i < n; i++)
         out[i] = d->ring[(d->ring_head - 1 - i + TRACE_N) % TRACE_N];
-    studio2_host_unlock();
+    pthread_mutex_unlock(&d->trace_mtx);
     return n;
 }
 
@@ -1539,10 +1708,302 @@ void studio2debug_trace_clear(studio2debug *d)
 {
     if (!d)
         return;
-    studio2_host_lock();
+    pthread_mutex_lock(&d->trace_mtx);
     d->ring_head = d->ring_count = 0;
-    studio2_host_unlock();
+    pthread_mutex_unlock(&d->trace_mtx);
     bump(d);
+}
+
+int studio2debug_trace_count(studio2debug *d)
+{
+    int n;
+    if (!d)
+        return 0;
+    pthread_mutex_lock(&d->trace_mtx);
+    n = d->ring_count;
+    pthread_mutex_unlock(&d->trace_mtx);
+    return n;
+}
+
+/* the entry's own bytes, as the disassembler's memory */
+typedef struct { uint16_t pc; const uint8_t *bytes; } trace_mem;
+
+static uint8_t trace_peek(void *user, uint16_t addr)
+{
+    const trace_mem *mem = user;
+    const unsigned off = (uint16_t)(addr - mem->pc);
+    return off < 3 ? mem->bytes[off] : 0;
+}
+
+static int trace_decode(const studio2debug_trace *t, char *text, size_t textsz, unsigned *flags,
+                        int32_t *target)
+{
+    trace_mem mem = { t->pc, t->bytes };
+    return dasm1802(t->pc, trace_peek, &mem, t->p == t->x, text, textsz, flags, target);
+}
+
+int studio2debug_trace_format(const studio2debug_trace *t, char *dst, int dstsz)
+{
+    char text[64];
+    unsigned flags;
+    int32_t target;
+
+    if (!t || !dst || dstsz <= 0)
+        return 0;
+    trace_decode(t, text, sizeof text, &flags, &target);
+    return snprintf(dst, (size_t)dstsz, "%04X  %-18s D=%02X DF=%d P=%X X=%X T=%02X Q=%d IE=%d R(X)=%04X",
+                    t->pc, text, t->d, t->df, t->p, t->x, t->treg, t->q, t->ie, t->rx);
+}
+
+int studio2debug_trace_match(const studio2debug_trace *t, int filter, uint16_t lo, uint16_t hi)
+{
+    char text[64];
+    unsigned flags;
+    int32_t target;
+
+    if (!t)
+        return 0;
+    if (filter == STUDIO2DEBUG_TRACE_RANGE)
+    {
+        if (lo > hi)
+        {
+            uint16_t swap = lo;
+            lo = hi;
+            hi = swap;
+        }
+        return t->pc >= lo && t->pc <= hi;
+    }
+    if (filter == STUDIO2DEBUG_TRACE_BRANCHES)
+    {
+        trace_decode(t, text, sizeof text, &flags, &target);
+        return target >= 0 || (flags & (DASM1802_STEP_OVER | DASM1802_STEP_OUT)) != 0;
+    }
+    return 1;
+}
+
+/* ---- memory search ---------------------------------------------------------------- */
+
+static int match_at(const uint8_t *mem, unsigned addr, const uint8_t *pat, int patlen, uint8_t mask,
+                    int flags)
+{
+    for (int k = 0; k < patlen; k++)
+    {
+        uint8_t have = mem[addr + (unsigned)k];
+        uint8_t want = pat[k];
+        if (flags & STUDIO2DEBUG_SEARCH_NOCASE)
+        {
+            if (have >= 'a' && have <= 'z')
+                have = (uint8_t)(have - 32);
+            if (want >= 'a' && want <= 'z')
+                want = (uint8_t)(want - 32);
+        }
+        if ((have & mask) != (want & mask))
+            return 0;
+    }
+    return 1;
+}
+
+/* The CPU's 64K as mapped now, side-effect free; NULL unless stopped. */
+static uint8_t *snapshot_64k(studio2debug *d)
+{
+    uint8_t *mem = NULL;
+    studio2_machine_t *m;
+
+    studio2_host_lock();
+    m = machine();
+    if (m && atomic_load(&d->stopped) && (mem = malloc(65536)) != NULL)
+        for (unsigned pos = 0; pos < 65536; pos++)
+            mem[pos] = studio2_machine_peek(m, (uint16_t)pos);
+    studio2_host_unlock();
+    return mem;
+}
+
+static int search_buf(const uint8_t *mem, const uint8_t *pat, int patlen, uint8_t mask, int flags,
+                      unsigned from, unsigned to, uint16_t *out, int max)
+{
+    int found = 0;
+    for (unsigned pos = from; pos <= to && pos + (unsigned)patlen - 1 <= 0xffff && found < max; pos++)
+        if (match_at(mem, pos, pat, patlen, mask, flags))
+            out[found++] = (uint16_t)pos;
+    return found;
+}
+
+int studio2debug_search(studio2debug *d, const uint8_t *pat, int patlen, uint8_t mask, int flags,
+                        uint16_t from, uint16_t to, uint16_t *out, int max)
+{
+    uint8_t *mem;
+    int found;
+
+    if (!d || !pat || patlen <= 0 || !out || max <= 0)
+        return -1;
+    if ((mem = snapshot_64k(d)) == NULL)
+        return -1;
+    if (from > to)
+    {
+        uint16_t swap = from;
+        from = to;
+        to = swap;
+    }
+    found = search_buf(mem, pat, patlen, mask, flags, from, to, out, max);
+    free(mem);
+    return found;
+}
+
+int studio2debug_search_next(studio2debug *d, const uint8_t *pat, int patlen, uint8_t mask, int flags,
+                             uint16_t from, int backward, uint16_t *found)
+{
+    uint8_t *mem;
+    uint16_t hit = 0;
+    int result = 0;
+
+    if (!d || !pat || patlen <= 0 || !found)
+        return -1;
+    if ((mem = snapshot_64k(d)) == NULL)
+        return -1;
+    if (!backward)
+    {
+        /* after `from` to the end, then 0..from (which includes `from`) */
+        if ((unsigned)from + 1 <= 0xffff &&
+            search_buf(mem, pat, patlen, mask, flags, (unsigned)from + 1, 0xffff, &hit, 1))
+            result = 1;
+        else if (search_buf(mem, pat, patlen, mask, flags, 0, from, &hit, 1))
+            result = 1;
+    }
+    else
+    {
+        /* the nearest match before `from`, else the last one from `from` up */
+        for (int pass = 0; pass < 2 && !result; pass++)
+        {
+            int start = pass == 0 ? (int)from - 1 : 0xffff;
+            int stop = pass == 0 ? 0 : (int)from;
+            for (int pos = start; pos >= stop; pos--)
+                if ((unsigned)pos + (unsigned)patlen - 1 <= 0xffff &&
+                    match_at(mem, (unsigned)pos, pat, patlen, mask, flags))
+                {
+                    hit = (uint16_t)pos;
+                    result = 1;
+                    break;
+                }
+        }
+    }
+    if (result)
+        *found = hit;
+    free(mem);
+    return result;
+}
+
+/* ---- the memory map ---------------------------------------------------------------- */
+
+typedef struct { int readable, writable; char name[48]; } page_info;
+
+static int same_page(const page_info *lhs, const page_info *rhs)
+{
+    return lhs->readable == rhs->readable && lhs->writable == rhs->writable &&
+           !strcmp(lhs->name, rhs->name);
+}
+
+/* What the bus serves at page `pg`, in the order read() resolves it: the
+ * cartridge's view first, then the console. */
+static void page_describe(studio2_machine_t *m, const uint8_t *types, int nbanks, int bank,
+                          unsigned pg, page_info *pi)
+{
+    const unsigned addr = pg << 8;
+    const int cart_page = m->cart && types[pg] != S2PG_NONE;
+
+    memset(pi, 0, sizeof *pi);
+    if (cart_page)
+    {
+        pi->readable = 1;
+        if (pg >= (S2MAP_WIN_PAGE) && pg < S2MAP_WIN_PAGE + S2MAP_WIN_PAGES)
+        {
+            if (nbanks > 1)
+                snprintf(pi->name, sizeof pi->name, "Cartridge bank window (bank %d/%d)", bank, nbanks);
+            else
+                snprintf(pi->name, sizeof pi->name, "Cartridge bank window");
+        }
+        else if (addr >= FN_RASTER_BASE)
+            snprintf(pi->name, sizeof pi->name, "FujiNet raster");
+        else if (addr >= FN_ARENA_BASE && addr < FN_ARENA_BASE + FN_ARENA_SIZE)
+            snprintf(pi->name, sizeof pi->name, "FujiNet mailbox arena");
+        else if (addr >= FN_ARENA_BASE)
+            snprintf(pi->name, sizeof pi->name, "FujiNet hotspots");
+        else if (types[pg] == S2PG_HOT)
+            snprintf(pi->name, sizeof pi->name, "Cartridge hotspot");
+        else
+            snprintf(pi->name, sizeof pi->name, "Cartridge ROM");
+        return;
+    }
+    if (addr < STUDIO2_ROM_SERVED || (!m->cart && addr < STUDIO2_BIOS_SIZE))
+    {
+        pi->readable = 1;
+        snprintf(pi->name, sizeof pi->name, m->have_bios ? "BIOS ROM" : "Stand-in ROM");
+    }
+    else if (addr >= 0x0C00)
+    {
+        /* the 512 bytes repeat on every other page here; one entry, not a
+         * hundred (a peek says which page answers) */
+        pi->readable = pi->writable = 1;
+        snprintf(pi->name, sizeof pi->name, "Console RAM mirrors (512 of every 1K)");
+    }
+    else if (addr >= 0x0800 && !(addr & 0x0200))
+    {
+        pi->readable = pi->writable = 1;
+        snprintf(pi->name, sizeof pi->name, "Console RAM (512 bytes)");
+    }
+    else
+        snprintf(pi->name, sizeof pi->name, "Open bus");
+}
+
+int studio2debug_memory_map(studio2debug *d, studio2debug_region *out, int max)
+{
+    studio2_machine_t *m;
+    uint8_t types[256];
+    page_info cur, pi;
+    unsigned run_lo = 0;
+    int count = 0, nbanks = 0, bank = 0;
+
+    if (!d || !out || max <= 0)
+        return 0;
+    studio2_host_lock();
+    m = machine();
+    if (!m)
+    {
+        studio2_host_unlock();
+        return 0;
+    }
+    if (m->cart)
+    {
+        studio2_cart_status_t st;
+        studio2_cart_status(m->cart, &st);
+        nbanks = st.nbanks;
+        bank = st.bank;
+        studio2_cart_page_types(m->cart, types);
+    }
+    else
+        memset(types, 0, sizeof types);
+    page_describe(m, types, nbanks, bank, 0, &cur);
+    for (unsigned pg = 1; pg <= 256; pg++)
+    {
+        if (pg < 256)
+        {
+            page_describe(m, types, nbanks, bank, pg, &pi);
+            if (same_page(&cur, &pi))
+                continue;
+        }
+        if (count < max)
+        {
+            out[count].lo = (uint16_t)(run_lo << 8);
+            out[count].hi = (uint16_t)((pg << 8) - 1);
+            out[count].readable = cur.readable;
+            out[count].writable = cur.writable;
+            snprintf(out[count].name, sizeof out[count].name, "%s", cur.name);
+            count++;
+        }
+        run_lo = pg;
+        cur = pi;
+    }
+    studio2_host_unlock();
+    return count;
 }
 
 /* ---- files ------------------------------------------------------------------------ */
