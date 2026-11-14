@@ -391,7 +391,9 @@ empty for CONFIG) and `bindings` (the controls that differ from the defaults).
 # Debugger
 
 The Debugger (<kbd>F12</kbd>) stops the console and shows what it is doing.
-It has eight tabs; closing it lets the console go on as it was.
+It has twelve tabs; closing it lets the console go on as it was. The 1802's
+registers sit in a strip under the tabs: edit a value while stopped and press
+<kbd>Enter</kbd>.
 
 | Button | Does |
 |---|---|
@@ -401,22 +403,32 @@ It has eight tabs; closing it lets the console go on as it was.
 | Step Out (<kbd>Shift+F8</kbd>) | On until the routine returns |
 | Scanline+1 | On to the next scanline |
 | Frame+1 | On to the next frame |
+| Clear Breakpoints | Removes every breakpoint |
+| Break at | A symbol name or hex address, then <kbd>Enter</kbd> |
+| Load Symbols | Reads Macroassembler AS `.map` and listing files, WLA-DX `.sym` or a plain list |
+| Clear Symbols | Drops loaded symbols, keeping the built-ins |
+| Pop Out | Moves the tab that shows into a window of its own; **Dock** in that window puts it back |
 | Help | Opens the topic of the tab that shows |
 
-<!-- context: debugger/prompt -->
-## Prompt
+Every stop brings the views back to where the machine is, even if you had
+scrolled away, and the line at the top says why it stopped. An `IDL`
+instruction waits for an interrupt or DMA, and nothing stops there until one
+comes.
 
-The Prompt takes commands, with completion on <kbd>Tab</kbd>. Conditions run
+<!-- context: debugger/console -->
+## Console
+
+The Console takes commands, with completion on <kbd>Tab</kbd>. Conditions run
 over registers, flags, memory and the beam. `help` lists the commands.
 
 | Command | Does |
 |---|---|
 | `break` | An execute breakpoint |
-| `bpr`, `bpw` | Memory reads or writes |
+| `bpr`, `bpw`, `bpa` | Memory reads, writes, or both |
 | `bpin`, `bpout` | I/O port reads or writes |
 | `print` | Evaluates an expression |
 | `mem`, `poke` | Dumps memory; writes bytes |
-| `video` | The 1861's state |
+| `video` | The Video tab as text: `video lines`, `video timing` |
 | `io`, `keys` | The ports; the keypads |
 | `cart`, `mailbox` | The cartridge, and FujiNet's mailbox |
 | `text` | The text engine's screen |
@@ -424,46 +436,123 @@ over registers, flags, memory and the beam. `help` lists the commands.
 | `runto` | Runs to an address |
 | `disasm` | Disassembles |
 | `trace` | The instruction trace |
+| `watch`, `unwatch` | The watch list: `watch score`, `unwatch 0` |
+| `find` | Searches memory for bytes (`find 30 02`) or text (`find text HELLO`) |
 | `save` | Saves state to a file |
-
-<!-- context: debugger/cpu -->
-## CPU and RAM
-
-R0 to RF, D, DF, P, X, T, B, IE, Q and EF1 to EF4, and the 512 bytes of RAM,
-editable. Click a value to edit it while stopped.
 
 <!-- context: debugger/disassembly -->
 ## Disassembly
 
-The 1802 disassembled at the PC in MAME's mnemonics, with the opcode bytes,
-labels and the breakpoints in the margin. Click a line to toggle its
-breakpoint. Follow PC keeps the current line in view. Symbols load from
-Macroassembler AS `.map` and listing files, WLA-DX `.sym` and plain lists; the
-mailbox, the text engine, the raster and the clients' entry are labelled out of
-the box.
+The 1802 disassembled at the PC in MAME's mnemonics, with the opcode bytes and
+labels. The current instruction is in the app's accent colour and a breakpoint
+is a red dot in the margin (a grey hollow one when it is disabled); click a
+line to toggle its breakpoint. **Follow PC** keeps the current line in view.
+Symbols load from Macroassembler AS `.map` and listing files, WLA-DX `.sym` and
+plain lists; the mailbox, the text engine, the raster and the clients' entry
+are labelled out of the box.
 
-<!-- context: debugger/video -->
-## Video
+<!-- context: debugger/memory -->
+## Memory
 
-The 1861's INT, EF and DMA lines and the beam; the whole raster, the
-cartridge's raster, and the BIOS display page.
-
-<!-- context: debugger/io -->
-## Sound and I/O
-
-Q (the beeper), the key latch, both keypads and the ports.
+The 64K the 1802 sees, 16 bytes to a row, each row labelled with what answers
+there (the BIOS, the cartridge, RAM and its mirrors, a cartridge bank, the
+mailbox, the raster). **Go To** takes an address, a label, an expression or a
+range (`$0800-$09FF`, `score..score+3`) and highlights what it found. **Poke**
+writes bytes. The search bar finds hex bytes (`30 02`) or text (not
+case-sensitive) with **Find Next** and **Find Previous**, wrapping once; the
+machine has to be stopped.
 
 <!-- context: debugger/breakpoints -->
 ## Breakpoints
 
-The list of breakpoints with their conditions. **Add**, **Remove**, and the
-check box to turn one off.
+Every breakpoint and watchpoint. **Add** one with a type, an address or range
+and, if you like, a condition:
+
+- **Execute** stops before an instruction runs.
+- **Read**, **Write** and **Access** (both) stop after the instruction that
+  touched memory, and the line at the top says what it did, for instance
+  `wrote $0810 = $41 (was $40)`. A read breakpoint on code also fires on the
+  instruction fetches.
+- **IN** and **OUT** take a port number (1 to 7).
+
+A condition can use `value` and `addr`, and `old`, what was there before:
+`value != old` stops only when a write changes something. The box beside each
+entry turns it off, and the list shows how many times it fired. **Clear Hits**
+zeroes the counts and **Clear Breakpoints** removes them all.
+
+<!-- context: debugger/watches -->
+## Watches
+
+Things to keep an eye on: type an address, a symbol, an expression or a range
+and press <kbd>Enter</kbd>. Each shows its value while the machine is stopped
+(`-` while it runs, `?` if it means nothing yet, which a later **Load
+Symbols** may fix). **Show in Memory** jumps to it in the Memory tab, **Break
+on Change** adds a Write breakpoint that fires when its value changes, and
+**Remove** drops it.
 
 <!-- context: debugger/cart -->
-## Cart
+## Cart and I/O
 
-The 256-page map of what the cartridge serves, its staging and the swap, and
-the text engine's screen.
+The cartridge: the 256-page map of what it serves, its staging and the swap,
+the bank window and the text engine's screen. Under it the I/O ports, the key
+latch, both keypads and the EF lines.
+
+<!-- context: debugger/trace -->
+## Trace
+
+Every instruction the 1802 runs, live. **Record** turns it on (it slows the
+console a little, so it starts off), **Clear** empties it, **Branches only**
+shows just the jumps, branches, calls and returns, and **In range** only a
+range of addresses. Trace and History share one recording.
+
+<!-- context: debugger/history -->
+## History
+
+The same recording, read at a stop: the lead-up to a breakpoint or a pause,
+newest at the bottom, with the registers at each instruction. Turn **Record**
+on before you run to the place you want to look at.
+
+<!-- context: debugger/video -->
+## Video
+
+The 1861, with the picture on the left and five sections on the right. The
+1861 reads the picture from memory by DMA, a line at a time, from wherever R0
+points, so the console records what each line was read from and the views use
+it.
+
+| View | Shows |
+|---|---|
+| Display | The last finished frame, as the screen showed it |
+| Decoded | The 64 columns by 128 lines of bytes the 1861 read, tinted by where they came from (the cartridge's raster, RAM or the BIOS display page) |
+| Beam | Stopped only: this frame as far as the beam has drawn it, the last one dimmed below, with the blanking, INT and EFx bands |
+| Values | The bytes as hex, line by line |
+
+**Zoom** goes from 1 to 16 times, or **Fit**. **Overlays** switch on a grid,
+the beam, the blanking, INT and EFx lines, the short DMA lines, a tint for each
+source page and the outline of the display window.
+
+Point at a pixel to see it in **Pixel**: its line, column, the byte, the
+address it was read from and which page that is. Click to pin it, click again
+to let go. Press **Break on writes** to stop the machine when anything writes
+that byte; it works for the BIOS display page in RAM, not for the cartridge's
+raster, which the CPU cannot write.
+
+**Registers** shows the display state, the INT, EF and DMA lines and when they
+next change, and R0; one that changed in the last few refreshes is highlighted.
+**Colours** shows the two colours and how many pixels use each. **Lines** lists
+each line's start address, byte count, position and flags. **Timing** shows the
+beam.
+
+<!-- context: debugger/sound -->
+## Sound
+
+Q, which gates the beeper, with the beeper's pitch.
+
+<!-- context: debugger/symbols -->
+## Symbols
+
+Every known symbol, the built-ins and the ones you loaded. **Filter** narrows
+the list, and activating a row goes to that address in the Disassembly.
 
 <!-- context: debugger/fujinet -->
 ## FujiNet packets

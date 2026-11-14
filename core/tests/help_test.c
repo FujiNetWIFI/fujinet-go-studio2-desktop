@@ -27,12 +27,13 @@ static const char *const platform_names[] = { "GNOME", "KDE", "Windows", "macOS"
 /* What the frontends' Help buttons and menus open. */
 static const char *const contexts[] = {
     "main", "nobios", "import-sd", "keypad", "fujilog", "prefs/Machine",
-    "debugger/prompt", "debugger/cpu", "debugger/disassembly", "debugger/video",
-    "debugger/io", "debugger/breakpoints", "debugger/cart", "debugger/fujinet",
+    "debugger/console", "debugger/disassembly", "debugger/memory", "debugger/breakpoints",
+    "debugger/watches", "debugger/cart", "debugger/trace", "debugger/history",
+    "debugger/video", "debugger/sound", "debugger/symbols", "debugger/fujinet",
 };
 
 /* The prompt's commands (core/include/studio2debug.h). */
-static const char *const debug_commands[] = { "break", "bpr", "bpw", "bpin", "bpout", "print", "mem", "poke", "video", "io", "keys", "cart", "mailbox", "text", "label", "runto", "disasm", "trace", "save" };
+static const char *const debug_commands[] = { "break", "bpr", "bpw", "bpin", "bpout", "print", "mem", "poke", "video", "io", "keys", "cart", "mailbox", "text", "label", "runto", "disasm", "trace", "save", "bpa", "watch", "unwatch", "find" };
 
 /* The Preferences pages: what each one has, as the frontends label it. */
 static const struct {
@@ -200,7 +201,7 @@ static void
 check_debugger(int p)
 {
     int t, b;
-    CHECK(studio2help_find("debugger/prompt", &t, &b) == 0, "no debugger/prompt");
+    CHECK(studio2help_find("debugger/console", &t, &b) == 0, "no debugger/console");
     const studio2help_topic *tp = studio2help_topic_at(t);
     int end = studio2help_section_end(t, b);
     for (size_t k = 0; k < sizeof debug_commands / sizeof *debug_commands; k++) {
@@ -219,12 +220,24 @@ check_debugger(int p)
             }
         }
         if (!found) {
-            fprintf(stderr, "MISSING (%s) debugger/prompt: command `%s`\n", platform_names[p], cmd);
+            fprintf(stderr, "MISSING (%s) debugger/console: command `%s`\n", platform_names[p], cmd);
             misses++;
         }
     }
-    /* the eight tabs */
-    require(p, "debugger", "tabs", "eight tabs");
+    /* the twelve tabs */
+    require(p, "debugger", "tabs", "twelve tabs");
+    require(p, "debugger/video", "views", "Display");
+    require(p, "debugger/video", "views", "Decoded");
+    require(p, "debugger/video", "views", "Beam");
+    require(p, "debugger/video", "views", "Values");
+    require(p, "debugger/video", "zoom", "Fit");
+    require(p, "debugger/video", "overlays", "Overlays");
+    require(p, "debugger/video", "inspector", "Pixel");
+    require(p, "debugger/video", "sections", "Registers");
+    require(p, "debugger/video", "sections", "Colours");
+    require(p, "debugger/video", "sections", "Lines");
+    require(p, "debugger/video", "sections", "Timing");
+    require(p, "debugger/video", "break", "Break on writes");
 }
 
 int
