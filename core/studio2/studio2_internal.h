@@ -9,7 +9,11 @@
  *                                       the Clear key
  *   src/devices/cpu/cosmac/cosmac.cpp   the CDP1802 (cpu1802.c)
  *   src/devices/video/cdp1861.cpp       the CDP1861 (cdp1861.c)
- *   src/devices/sound/beep.cpp          the 300 Hz beeper
+ *   src/devices/sound/beep.cpp          the 300 Hz beeper, kept for A/B
+ *                                       runs against MAME
+ *
+ * The console's own beeper, a Q-gated NE555 whose pitch glides, is
+ * beeper555.c (from the RCA Studio II core for MiSTer).
  *
  * Field names keep MAME's own (minus the m_ prefix) where there is one. The
  * Visicom and the MPT-02 family are not carried over: this app's machine is
@@ -31,6 +35,7 @@
 #include "cpu1802.h"
 #include "cdp1861.h"
 #include "fujinet_cart.h"
+#include "beeper555.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,7 +96,14 @@ struct studio2_machine {
 
     studio2_cart_t *cart;         /* the FujiNet cartridge, or NULL (tests) */
 
-    /* the beeper (beep.cpp), streamed at STUDIO2_AUDIO_RATE */
+    /* the beeper, streamed at STUDIO2_AUDIO_RATE: the NE555 (beeper555.c),
+     * or with beep_mame MAME's 300 Hz square (beep.cpp) */
+    bool beep_mame;
+    int beep_tuning;              /* BEEPER555_* */
+    beeper555_t ne555;
+    uint64_t ne555_ticks;         /* clocks the NE555 has run */
+    float ne555_acc;              /* this sample's level so far, */
+    uint32_t ne555_n;             /* over this many clocks */
     bool beep_enable;
     int32_t beep_incr;
     float beep_signal;

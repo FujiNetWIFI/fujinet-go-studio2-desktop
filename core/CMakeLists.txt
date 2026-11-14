@@ -2,7 +2,8 @@
 #
 #   studio2/            the emulator: MAME's Studio II driver, its CDP1802
 #                       and CDP1861 and its beeper transposed to C
-#                       (machine.c, cpu1802.c, cdp1861.c), the no-BIOS
+#                       (machine.c, cpu1802.c, cdp1861.c), the console's
+#                       NE555 beeper (beeper555.c), the no-BIOS
 #                       stand-in (stub.asm / stub.c), the paced host thread,
 #                       and the FujiNet cartridge device.
 #
@@ -54,6 +55,7 @@ set(STUDIO2_EMU_SOURCES
   studio2/cpu1802.c
   studio2/cdp1861.c
   studio2/machine.c
+  studio2/beeper555.c
   studio2/stub.c
   studio2/dasm1802.c
   studio2/fujinet_cart.c

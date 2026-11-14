@@ -11,7 +11,8 @@
  *     -every K        write every K-th frame (default: only the last)
  *     -out PREFIX     output prefix (default "frame"): PREFIX_NNNNN.ppm
  *     -boip HOST:PORT FujiNet's BoIP listener (default 127.0.0.1:11518)
- *     -mame           MAME's power-on (no CLEAR pulse: IE stays 0)
+ *     -mame           MAME's power-on (no CLEAR pulse: IE stays 0) and
+ *                     MAME's 300 Hz beeper in place of the NE555
  *     -key F:P:K:D    at frame F press (D=1) / release (D=0) key K (0-9) of
  *                     keypad P (A or B); repeatable
  *     -clear F:D      at frame F press (1) / release (0) the Clear key

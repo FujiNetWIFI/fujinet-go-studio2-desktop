@@ -11,7 +11,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
 
 | | |
 |---|---|
-| **Emulator** | MAME's RCA Studio II (`studio2.cpp`), its CDP1802 COSMAC (`cosmac.cpp`), its CDP1861 Pixie (`cdp1861.cpp`) and its beeper, transposed to C — the astrocade and SMS siblings' way. Frame for frame pixel-identical to MAME, keys included (`tools/ab/`). |
+| **Emulator** | MAME's RCA Studio II (`studio2.cpp`), its CDP1802 COSMAC (`cosmac.cpp`) and its CDP1861 Pixie (`cdp1861.cpp`), transposed to C — the astrocade and SMS siblings' way. Frame for frame pixel-identical to MAME, keys included (`tools/ab/`). The sound is the console's own Q-gated NE555 (`beeper555.c`, from the RCA Studio II core for MiSTer), not MAME's 300 Hz square. |
 | **Machine** | The RCA Studio II (NTSC, 1.76 MHz, 59.98 Hz), two 10-key keypads and CLEAR. The RCA BIOS is built in. |
 | **Cartridge** | The FujiNet Studio II cartridge (`fujinet-firmware` `pico/studio2` on `pico/common`): it sees every console read — display DMA included — and claims whole pages outside the BIOS, serving the 64×128 raster the 1861 fetches and a 16×10 text engine drawn into it, the mailbox at `$E400`, and up to 48K of image (an ST2 with a bank window at `$C400`, or raw), CONFIG baked in. It speaks protocol 2: pages the program can write (a poke stream, COPY) and a graphics layer — pictures stamped at any pixel, rectangles, 16 sprites, the view shaken or inverted — composed into a double-buffered display, and drawn even while a FujiNet transaction is out. M.U.L.E. runs on it. Its protocol (`fujimail`), wire codec (`fujibus`), image planner (`s2map`), staging and swap (`fuji_load`) and text engine (`s2_text`) are the cartridge firmware's own sources, staged verbatim. |
 | **FujiNet** | The firmware's `RS232` PC target, built in-process as `libfujinet` and dialled by the cartridge over loopback (BoIP on **11518**, web admin on **11519**). |
@@ -133,7 +133,8 @@ graft (`pico/studio2/emu/apply.sh`) in `$MAME` and your own BIOS
 (`--bios`); use `--mame-power-on`, since MAME's 1802 skips the power-on
 CLEAR reset the console does (`core/studio2/machine.c`), and press Clear
 first, or MAME's BIOS never takes its interrupt. `--wav` compares the
-beeper too. `tools/ab/abtrace.lua` and `studio2_headless -trace` give bus-read traces of
+beeper too: with `--mame-power-on` the core plays MAME's 300 Hz beep in
+place of the NE555, so the two match sample for sample. `tools/ab/abtrace.lua` and `studio2_headless -trace` give bus-read traces of
 both sides with cycle stamps, for finding where two runs part.
 
 ### Cross-building Windows on Linux

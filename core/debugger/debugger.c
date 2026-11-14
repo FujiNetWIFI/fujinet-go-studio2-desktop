@@ -1045,7 +1045,7 @@ static void io_get_locked(studio2_machine_t *m, studio2debug_io *o)
     if (!m)
         return;
     o->q = m->cpu.q;
-    o->beep_hz = STUDIO2_BEEP_HZ;
+    o->beep_hz = m->beep_mame ? STUDIO2_BEEP_HZ : beeper555_hz(&m->ne555, STUDIO2_CPU_CLOCK);
     o->keylatch = m->keylatch;
     o->keys[0] = m->keys[0];
     o->keys[1] = m->keys[1];

@@ -444,7 +444,7 @@ int main(void)
         check(!io.have_bios && !io.stub_parked, "the stand-in, not parked");
         check(io.keylatch == 1, "the program latched key 1");
         check(io.last_out[2] == 1, "OUT 2's last byte");
-        check(io.beep_hz == 300 && !io.q, "the 300 Hz beeper, off");
+        check(io.beep_hz == 625 && !io.q, "the NE555 beeper, off, at its fresh 625 Hz");
         check(!io.clear_held && io.keys[0] == 0 && io.keys[1] == 0, "nothing held");
     }
 
