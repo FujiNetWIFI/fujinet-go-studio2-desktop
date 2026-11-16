@@ -201,3 +201,8 @@ set_tests_properties(netboot_sync PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180 RUN
   ENVIRONMENT "STUDIO2_CART_SYNC=1")
 
 endif()
+
+# The audio ring holds its fill against a mismatched device clock with no
+# hard trims (core/studio2/audioring.h).
+studio2_test(audioring_test audioring_test.c)
+add_test(NAME audioring COMMAND audioring_test)

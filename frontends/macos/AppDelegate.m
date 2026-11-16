@@ -119,6 +119,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     BOOL _launched;
     NSWindow *_window;
     Studio2DisplayView *_display;
+    id<NSObject> _activity;          /* no App Nap, no timer coalescing while we run */
     Studio2ContentView *_content;
     NSTimer *_statusTimer;
     NSTimer *_sysactTimer;
@@ -167,6 +168,13 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
 - (void)applicationDidFinishLaunching:(NSNotification *)note
 {
     (void)note;
+
+    /* An emulator is latency-critical work: App Nap must not throttle the
+     * machine thread or coalesce its timers when the window is behind
+     * another, and Game Mode (Info.plist) asks the system to favour it. */
+    _activity = [[NSProcessInfo processInfo]
+        beginActivityWithOptions:(NSActivityUserInitiated | NSActivityLatencyCritical)
+                          reason:@"Emulating an RCA Studio II"];
 
     /* The 100x246 picture at the TV's 4:3, three times its 246 lines high:
      * 984x738, a comfortable first window on any Mac. */
@@ -378,6 +386,10 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     [_settingsTimer invalidate];
     [_logTimer invalidate];
     [_display stop];
+    if (_activity) {
+        [[NSProcessInfo processInfo] endActivity:_activity];
+        _activity = nil;
+    }
     studio2session_stop(_session);
     studio2session_free(_session);
     _session = NULL;
