@@ -75,7 +75,17 @@
     <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
          it cannot disagree with the tree; past releases are literal. The
          release job checks that this first entry is still a template. -->
-    <release version="@PROJECT_VERSION@" date="2026-11-14">
+    <release version="@PROJECT_VERSION@" date="2026-11-16">
+      <description>
+        <p>
+          macOS: the picture is drawn with Metal in step with the display, so it is smoother on 60 and 120 Hz screens; the emulator runs with game-grade scheduling priority; and the app opts into macOS Game Mode when it is full screen.
+        </p>
+        <p>
+          Audio: the sound buffer now follows the machine's clock instead of being cut with a click every half minute or so.
+        </p>
+      </description>
+    </release>
+    <release version="0.7.1" date="2026-11-14">
       <description>
         <p>
           New debugger, the same as the other FujiNet Go desktops: twelve tabs (Console, Disassembly, Memory, Breakpoints, Watches, Cart &amp; I/O, Trace, History, Video, Sound, Symbols, FujiNet) with the 1802's registers under all of them; any tab can pop out into its own window. Breakpoints can be switched off and count their hits, write breakpoints say what was written and what it replaced, and Memory goes to ranges, searches and labels what answers where. Trace and History record every instruction. The Video tab shows what the 1861 read for each line of the picture and where it came from, and can stop on a write to it.
