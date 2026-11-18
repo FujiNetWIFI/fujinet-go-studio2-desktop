@@ -15,7 +15,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
 | **Machine** | The RCA Studio II (NTSC, 1.76 MHz, 59.98 Hz), two 10-key keypads and CLEAR. The RCA BIOS is built in. |
 | **Cartridge** | The FujiNet Studio II cartridge (`fujinet-firmware` `pico/studio2` on `pico/common`): it sees every console read — display DMA included — and claims whole pages outside the BIOS, serving the 64×128 raster the 1861 fetches and a 16×10 text engine drawn into it, the mailbox at `$E400`, and up to 48K of image (an ST2 with a bank window at `$C400`, or raw), CONFIG baked in. It speaks protocol 2: pages the program can write (a poke stream, COPY) and a graphics layer — pictures stamped at any pixel, rectangles, 16 sprites, the view shaken or inverted — composed into a double-buffered display, and drawn even while a FujiNet transaction is out. M.U.L.E. runs on it. Its protocol (`fujimail`), wire codec (`fujibus`), image planner (`s2map`), staging and swap (`fuji_load`) and text engine (`s2_text`) are the cartridge firmware's own sources, staged verbatim. |
 | **FujiNet** | The firmware's `RS232` PC target, built in-process as `libfujinet` and dialled by the cartridge over loopback (BoIP on **11518**, web admin on **11519**). |
-| **Frontends** | GNOME (GTK4/libadwaita), KDE (Qt6 Widgets), macOS (AppKit), Windows (Win32/GDI) — each with the display, a Keypad window, Preferences, a live FujiNet console log, and a debugger. |
+| **Frontends** | GNOME (GTK4/libadwaita), KDE (Qt6 Widgets), macOS (AppKit), Windows (Win32/GDI) — each with the display, a Controllers window, Preferences, a live FujiNet console log, and a debugger. |
 | **Packaging** | Per-frontend DEB/RPM/TGZ, two Flatpaks, a Windows (x86-64) zip and NSIS installer, and macOS bundles for Apple Silicon (arm64) and Intel (x86_64), all through GitHub Actions. |
 
 ## What it is
@@ -52,7 +52,7 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
   ejects an opened cartridge.
 - **Built-in Help.** **Help ▸ FujiNet Go Studio II Help** (Ctrl+Shift+H, ⌘? on
   a Mac) opens a searchable Help, and the Help buttons in Preferences, the
-  keypad window, the debugger and the console log open the topic for what they
+  Controllers window, the debugger and the console log open the topic for what they
   show. The text is [data/help/help.md](data/help/help.md), which GitHub shows
   as it is; the build embeds it and every frontend lays it out natively.
 - **The debugger, in every frontend.** F12 opens it and stops the machine:
@@ -73,9 +73,10 @@ A member of the FujiNet Go desktop family (`fujinet-go-adam-desktop`,
   engine, the raster and the clients' entry are labelled out of the box.
 - **Gamepads that come and go.** SDL3 hot-plug: a pad steers with the keys
   the games use — 2 4 6 8, the diagonals on 1 3 7 9 — fires with 0 and 5,
-  and Start is CLEAR. The **Keypad** window shows both keypads live,
-  presses keys with the mouse, and rebinds any key to a keyboard key or a
-  gamepad button (Map).
+  and Start is CLEAR. The **Controllers** window is drawn like the console's
+  top: both keypads and the CLEAR bar, live, with the mouse pressing keys; Map
+  rebinds any key to a keyboard key or a gamepad button, and each pad's
+  keypad is chosen in the window and remembered.
 
 The icon is the family mark in black on the Studio II's case tan
 (`#C8B58C`). The UI accent is the same tan, marking held keys, the Map
@@ -192,9 +193,9 @@ picture.
 | Keypad B | the numeric keypad, laid out alike: 7 8 9 = 1 2 3 … 0 = 0 |
 | Gamepads | D-pad / left stick = 2 4 6 8 (diagonals 1 3 7 9); South = 0, East = 5, Start = CLEAR |
 | CLEAR / Reset to CONFIG | **F3** / **Escape** |
-| Keypad / Fullscreen / Debugger | F9 / F11 / F12 (debugger: F5 run/stop, F7 step, F8 step over, Shift+F8 step out) |
+| Controllers / Fullscreen / Debugger | F9 / F11 / F12 (debugger: F5 run/stop, F7 step, F8 step over, Shift+F8 step out) |
 
-Every key is remappable in the Keypad window.
+Every key is remappable in the Controllers window (F9).
 
 ## How this was verified
 
