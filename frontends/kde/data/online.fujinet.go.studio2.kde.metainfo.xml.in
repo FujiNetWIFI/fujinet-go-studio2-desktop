@@ -22,7 +22,7 @@
       SD puts a cartridge on FujiNet's SD folder, to boot it from CONFIG.
     </p>
     <p>
-      Both ten-key keypads are on screen and remappable, gamepads are picked
+      Both ten-key keypads are drawn on screen like the console's top and are remappable, gamepads are picked
       up as they are plugged in, and a native debugger is a key press away:
       a command prompt, the 1802's registers and the console RAM, a
       disassembly with breakpoints, the CDP1861's raster, the beeper and the
@@ -61,15 +61,25 @@
       <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.7.0/data/screenshots/kde/2_debugger.png</image>
     </screenshot>
     <screenshot>
-      <caption>Both keypads on screen</caption>
-      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.2.1/data/screenshots/kde/3_keypad.png</image>
+      <caption>The Controllers window, drawn like the console's top</caption>
+      <image>https://raw.githubusercontent.com/FujiNetWIFI/fujinet-go-studio2-desktop/v0.9.0/data/screenshots/kde/3_controllers.png</image>
     </screenshot>
   </screenshots>
   <releases>
     <!-- The CURRENT release templates its version from @PROJECT_VERSION@, so
          it cannot disagree with the tree; past releases are literal. The
          release job checks that this first entry is still a template. -->
-    <release version="@PROJECT_VERSION@" date="2026-11-16">
+    <release version="@PROJECT_VERSION@" date="2026-11-18">
+      <description>
+        <p>
+          New Controllers window, drawn like the top of the real console: both ten-key keypads with their direction marks, the CLEAR bar and its lamp, and buttons for Reset to CONFIG and Stop in Debugger. Click a key to hold it; keys light up whoever is holding them, and letting go of the keyboard, a gamepad or the mouse never releases another.
+        </p>
+        <p>
+          Each gamepad can be given to keypad A or keypad B in the window, and is remembered. Map rebinds a key to a keyboard key or a gamepad button, Clear unbinds one, and Show bindings writes each key's binding on it. Preferences has an Input page for gamepads, analog sticks and Reset Controls. F9, F11 and F12 can no longer be bound.
+        </p>
+      </description>
+    </release>
+    <release version="0.8.0" date="2026-11-16">
       <description>
         <p>
           macOS: the picture is drawn with Metal in step with the display, so it is smoother on 60 and 120 Hz screens; the emulator runs with game-grade scheduling priority; and the app opts into macOS Game Mode when it is full screen.
