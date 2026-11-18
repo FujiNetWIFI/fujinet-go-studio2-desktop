@@ -23,9 +23,16 @@
  * the SMS sibling's gamepad_sdl.c.
  *
  * Pads are assigned to ports in connection order unless assigned explicitly.
- * A pad that is unplugged and plugged back in (matched by its SDL GUID and
- * name) gets its explicit assignment back, and every connect/disconnect is
- * reported to the session for the frontend's toast.
+ * An explicit assignment is remembered (settings key "pad_assign", see
+ * pad_assign.h): a pad that is unplugged and plugged back in, or is there on
+ * the next run, gets it back -- matched by its SDL GUID, else by its name. Two
+ * identical pads share one entry; the first to connect gets it. Every
+ * connect/disconnect is reported to the session for the frontend's toast.
+ *
+ * Each pad has a stable owner number (0..MAX_PADS-1) while connected, and its
+ * buttons and its stick/D-pad hold keypad keys as separate sources in input.c,
+ * so two pads on one keypad, or a pad and the keyboard, never cancel each
+ * other.
  *
  * Copyright (C) 2026 Thomas Cherryhomes
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -41,9 +48,10 @@
 #include <SDL3/SDL.h>
 
 #include "gamepad_sdl.h"
+#include "pad_assign.h"
 #include "session_internal.h"
 
-#define MAX_PADS 8
+#define MAX_PADS STUDIO2_MAX_PADS
 #define MAX_HATS 4
 
 /* A third of full deflection engages, a sixth releases: low enough that a
@@ -55,15 +63,23 @@
 
 typedef struct {
     SDL_JoystickID id;
+    int owner;                /* input.c source number: stable while connected */
     SDL_Gamepad *handle;      /* mapped gamepad, or NULL */
     SDL_Joystick *joy;        /* raw joystick when not a gamepad */
     int assign;               /* explicit port, -1 = automatic */
+    int by_name;              /* assign was restored from a name-only match
+                               * (the entry's GUID differs): an exact-GUID
+                               * pad may take it over */
     int port;                 /* the port it drove on the last poll, or -1 */
     int stick_dir;            /* left stick's four-way state (hysteresis) */
     int dpad_dir;             /* D-pad / hat 0 state */
     uint8_t sent[STUDIO2_ACT_PER_PORT]; /* directional actions currently held */
+    /* What each button's press asserted (target + 1, 0 = nothing), so its
+     * release lets go of exactly that even if the binding changed meanwhile. */
+    int16_t btn_target[256];
     SDL_GUID guid;
-    char name[64];
+    char guidstr[STUDIO2_PAD_GUID_MAX];   /* guid as hex, for the pad_assign table */
+    char name[STUDIO2_PAD_NAME_MAX];
     int trigger_down[2];
     Uint8 last_hat[MAX_HATS];
 } pad_slot;
@@ -79,9 +95,9 @@ typedef struct {
     unsigned generation;
     /* Map-mode capture */
     int cap_active, cap_have, cap_result;
-    /* explicit assignments of pads that went away, for when they come back */
-    struct { SDL_GUID guid; char name[64]; int assign; int used; } gone[MAX_PADS];
-    int gone_next;
+    /* the remembered explicit assignments (the "pad_assign" setting), for
+     * pads that are away as well as those here; guarded by lock */
+    studio2_pad_table table;
 } gamepad_state;
 
 static gamepad_state *g_state;   /* one per process: SDL's subsystem is */
@@ -187,15 +203,13 @@ static const char *slot_name(const pad_slot *slot)
     return n ? n : "Gamepad";
 }
 
+/* Lets go of everything the pad holds, whichever way it was held. The caller
+ * may hold g->lock: input.c's lock is a leaf below it. */
 static void slot_release_all(gamepad_state *g, pad_slot *slot)
 {
-    int a;
-    if (slot->port < 0) return;
-    for (a = 0; a < STUDIO2_ACT_PER_PORT; a++)
-        if (slot->sent[a]) {
-            slot->sent[a] = 0;
-            session_gamepad_apply(g->session, slot->port, a, 0);
-        }
+    memset(slot->sent, 0, sizeof slot->sent);
+    memset(slot->btn_target, 0, sizeof slot->btn_target);
+    session_gamepad_release(g->session, slot->owner);
 }
 
 static void slot_close(gamepad_state *g, pad_slot *slot)
@@ -208,6 +222,32 @@ static void slot_close(gamepad_state *g, pad_slot *slot)
 }
 
 static int effective_port_locked(gamepad_state *g, int idx);
+
+/* Gives the pad in slot idx its remembered port. An entry with the pad's own
+ * GUID is the pad's: it takes it from a pad that got it only through the name
+ * fallback. A pad known only by name takes the entry if no other pad carries
+ * it (two identical pads, or one pad known under two GUIDs): then this one
+ * stays automatic. Locked by the caller; only reads g->table. */
+static void restore_assignment(gamepad_state *g, int idx)
+{
+    pad_slot *slot = &g->pads[idx];
+    int ent = studio2_pad_table_find(&g->table, slot->guidstr, slot->name), kix;
+    int exact;
+
+    if (ent < 0 || g->table.entry[ent].port >= 2) return;
+    exact = !strcmp(g->table.entry[ent].guid, slot->guidstr);
+    for (kix = 0; kix < g->npads; kix++) {
+        pad_slot *other = &g->pads[kix];
+        if (kix == idx || other->assign < 0 ||
+            studio2_pad_table_find(&g->table, other->guidstr, other->name) != ent)
+            continue;
+        if (!exact || !other->by_name) return;
+        other->assign = -1;          /* the entry's owner is here: it wins */
+        other->by_name = 0;
+    }
+    slot->assign = g->table.entry[ent].port;
+    slot->by_name = !exact;
+}
 
 /* Idempotent, and the single place the gamepad/joystick decision is made:
  * both SDL_EVENT_JOYSTICK_ADDED and SDL_EVENT_GAMEPAD_ADDED land here (SDL
@@ -224,8 +264,12 @@ static void open_pad(gamepad_state *g, SDL_JoystickID id)
         SDL_Joystick *j = gp ? NULL : SDL_OpenJoystick(id);
         if (gp || j) {
             pad_slot *slot = &g->pads[g->npads++];
-            int h;
+            int h, used = 0, kix;
+            for (kix = 0; kix < g->npads - 1; kix++)
+                used |= 1 << g->pads[kix].owner;
             memset(slot, 0, sizeof *slot);
+            for (kix = 0; kix < MAX_PADS && (used & (1 << kix)); kix++) {}
+            slot->owner = kix;
             slot->id = id;
             slot->handle = gp;
             slot->joy = j;
@@ -234,14 +278,8 @@ static void open_pad(gamepad_state *g, SDL_JoystickID id)
             for (h = 0; h < MAX_HATS; h++) slot->last_hat[h] = SDL_HAT_CENTERED;
             slot->guid = SDL_GetJoystickGUIDForID(id);
             snprintf(slot->name, sizeof slot->name, "%s", slot_name(slot));
-            for (h = 0; h < MAX_PADS; h++) {
-                if (g->gone[h].used && !memcmp(&g->gone[h].guid, &slot->guid, sizeof slot->guid)
-                    && !strcmp(g->gone[h].name, slot->name)) {
-                    slot->assign = g->gone[h].assign;
-                    g->gone[h].used = 0;
-                    break;
-                }
-            }
+            SDL_GUIDToString(slot->guid, slot->guidstr, sizeof slot->guidstr);
+            restore_assignment(g, g->npads - 1);
             g->generation++;
             fprintf(stderr, "studio2 gamepad: %s connected (%s)\n", slot->name,
                     gp ? "gamepad" : "raw joystick");
@@ -269,13 +307,6 @@ static void close_pad(gamepad_state *g, SDL_JoystickID id)
         char msg[128];
         fprintf(stderr, "studio2 gamepad: %s disconnected\n", slot->name);
         snprintf(msg, sizeof msg, "Disconnected: %s", slot->name);
-        if (slot->assign >= 0) {
-            int k = g->gone_next++ % MAX_PADS;
-            g->gone[k].guid = slot->guid;
-            memcpy(g->gone[k].name, slot->name, sizeof g->gone[k].name);
-            g->gone[k].assign = slot->assign;
-            g->gone[k].used = 1;
-        }
         slot_close(g, slot);
         session_gamepad_event(g->session, msg);
         for (i = idx; i < g->npads - 1; i++) g->pads[i] = g->pads[i + 1];
@@ -300,7 +331,7 @@ static int effective_port_locked(gamepad_state *g, int idx)
 
 static void dispatch_button(gamepad_state *g, SDL_JoystickID which, int b, int down)
 {
-    int idx, port, target;
+    int idx, port, owner = 0, target = -1;
     if (b == STUDIO2_PAD_BTN_NONE) return;
 
     pthread_mutex_lock(&g->lock);
@@ -314,20 +345,30 @@ static void dispatch_button(gamepad_state *g, SDL_JoystickID which, int b, int d
     }
     idx = slot_for_id(g, which);
     port = idx >= 0 ? effective_port_locked(g, idx) : -1;
+    if (idx >= 0 && b >= 0 && b < 256) {
+        pad_slot *slot = &g->pads[idx];
+        owner = slot->owner;
+        if (down) {
+            if (port >= 0) {
+                target = studio2session_target_for_button(g->session, port, b);
+                if (target >= 0 && target < STUDIO2_TARGET_SYSACT(0))
+                    slot->btn_target[b] = (int16_t)(target + 1);
+            }
+        } else if (slot->btn_target[b]) {
+            /* what the press asserted, whatever the binding says now */
+            target = slot->btn_target[b] - 1;
+            slot->btn_target[b] = 0;
+        }
+    }
     pthread_mutex_unlock(&g->lock);
-    if (port < 0) return;
-
-    target = studio2session_target_for_button(g->session, port, b);
     if (target < 0) return;
+
     if (target >= STUDIO2_TARGET_SYSACT(0)) {
+        /* a console action is posted, on the press only, for the UI thread */
         if (down) studio2session_sysaction_post(g->session, target - STUDIO2_TARGET_SYSACT(0));
         return;
     }
-    if (target < 2 * STUDIO2_ACT_PER_PORT)
-        session_gamepad_apply(g->session, target / STUDIO2_ACT_PER_PORT,
-                              target % STUDIO2_ACT_PER_PORT, down);
-    else
-        studio2session_press(g->session, target, down);
+    session_gamepad_target(g->session, owner, target, down);
 }
 
 static int hat_dir_from_mask(Uint8 mask)
@@ -457,7 +498,7 @@ static void poll_one(gamepad_state *g, pad_slot *slot, int port,
     for (a = 0; a < STUDIO2_ACT_PER_PORT; a++) {
         if (want[a] != slot->sent[a]) {
             slot->sent[a] = want[a];
-            session_gamepad_apply(g->session, port, a, want[a]);
+            session_gamepad_apply(g->session, slot->owner, port, a, want[a]);
         }
     }
 
@@ -579,6 +620,8 @@ int gamepad_start(struct studio2session *s)
     if (!g) { SDL_QuitSubSystem(SDL_INIT_GAMEPAD); return -1; }
     g->session = s;
     pthread_mutex_init(&g->lock, NULL);
+    /* the remembered assignments, once: garbage or no key is an empty table */
+    studio2_pad_table_decode(&g->table, studio2session_get_str(s, "pad_assign", ""), 2);
     /* An explicit stack: the platform default is 512 KB on macOS, and SDL's
      * HID enumeration runs on this thread. */
     pthread_attr_t attr;
@@ -642,11 +685,37 @@ int studio2session_gamepad_name(studio2session *s, int idx, char *dst, int dstsz
 void studio2session_gamepad_assign(studio2session *s, int idx, int port)
 {
     gamepad_state *g = s->gamepad;
+    char text[STUDIO2_PAD_ASSIGN_TEXT_MAX];
+    int changed = 0;
     if (!g) return;
     pthread_mutex_lock(&g->lock);
-    if (idx >= 0 && idx < g->npads)
-        g->pads[idx].assign = (port >= 0 && port < 2) ? port : -1;
+    if (idx >= 0 && idx < g->npads) {
+        pad_slot *slot = &g->pads[idx];
+        if (port >= 0 && port < 2) {
+            slot->assign = port;
+            slot->by_name = 0;
+            changed = studio2_pad_table_set(&g->table, slot->guidstr, slot->name, port) > 0;
+        } else {
+            const char *kguid[MAX_PADS], *kname[MAX_PADS];
+            int kix, nkeep = 0;
+            slot->assign = -1;
+            slot->by_name = 0;
+            for (kix = 0; kix < g->npads; kix++)
+                if (kix != idx && g->pads[kix].assign >= 0) {
+                    kguid[nkeep] = g->pads[kix].guidstr;
+                    kname[nkeep++] = g->pads[kix].name;
+                }
+            changed = studio2_pad_table_remove(&g->table, slot->guidstr, slot->name,
+                                               nkeep, kguid, kname);
+        }
+        if (changed && studio2_pad_table_encode(&g->table, text, sizeof text) < 0)
+            changed = 0;
+    }
     pthread_mutex_unlock(&g->lock);
+    /* the settings file is written here, on the caller's thread, with the
+     * pad lock let go: the pad thread must never wait on a file write */
+    if (changed)
+        studio2session_set_str(s, "pad_assign", text);
 }
 
 int studio2session_gamepad_assignment(studio2session *s, int idx)

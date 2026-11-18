@@ -57,8 +57,8 @@ static void seed_button(int target, int button)
 /* MAME's studio2 keys: keypad A on Q W E / A S D / Z X C (keys 1-9, laid
  * out as the keypad is) with 0 on Left Alt; keypad B on the numeric keypad
  * the same way up (7 8 9 = 1 2 3) with 0 on its 0. F3 is CLEAR (MAME's)
- * and Escape is Reset to CONFIG. F5/F7/F8/F9/F11/F12 are the family's
- * window and debugger keys and stay free of the machine. */
+ * and Escape is Reset to CONFIG. F9, F11 and F12 are the family's
+ * window, full-screen and debugger keys and can never be bound. */
 static void compute_defaults_locked(void)
 {
     static const uint32_t keypad_a[STUDIO2_ACT_PER_PORT] = {
@@ -107,6 +107,14 @@ static uint32_t fold(uint32_t keysym)
     return keysym;
 }
 
+/* F9 (the Controllers window), F11 (full screen) and F12 (the debugger) belong
+ * to the app: a binding on them would swallow the shortcut. */
+static int keysym_reserved(uint32_t keysym)
+{
+    return keysym == STUDIO2_KEYSYM_F9 || keysym == STUDIO2_KEYSYM_F11 ||
+           keysym == STUDIO2_KEYSYM_F12;
+}
+
 /* ---- persistence ---------------------------------------------------------- */
 
 static void apply_persisted_locked(const char *packed)
@@ -117,7 +125,11 @@ static void apply_persisted_locked(const char *packed)
         const char *end = strchr(p, ' ');
         if (sscanf(p, "%d.%c:%ld", &target, &kind, &value) == 3
             && target >= 0 && target < STUDIO2_TARGET_COUNT) {
-            if (kind == 'k') s_table[target].keysym = (uint32_t)value;
+            if (kind == 'k') {
+                /* a reserved key in an old settings file keeps the default */
+                if (!keysym_reserved((uint32_t)value))
+                    s_table[target].keysym = (uint32_t)value;
+            }
             else if (kind == 'b') s_table[target].button = (int)value;
         }
         if (!end) break;
@@ -273,6 +285,7 @@ void studio2session_binding_set_key(studio2session *s, int target, uint32_t keys
     (void)s;
     if (target < 0 || target >= STUDIO2_TARGET_COUNT) return;
     keysym = fold(keysym);
+    if (keysym_reserved(keysym)) return;         /* F9, F11, F12 stay the app's */
     pthread_mutex_lock(&s_lock);
     ensure_seeded_locked();
     if (keysym) {
@@ -313,6 +326,18 @@ void studio2session_binding_set_button(studio2session *s, int target, int button
     persist_locked();
     pthread_mutex_unlock(&s_lock);
     describe_stolen(victims, nvictims, stolen, stolensz);
+}
+
+void studio2session_binding_clear(studio2session *s, int target)
+{
+    (void)s;
+    if (target < 0 || target >= STUDIO2_TARGET_COUNT) return;
+    pthread_mutex_lock(&s_lock);
+    ensure_seeded_locked();
+    s_table[target].keysym = 0;
+    s_table[target].button = STUDIO2_PAD_BTN_NONE;
+    persist_locked();
+    pthread_mutex_unlock(&s_lock);
 }
 
 void studio2session_bindings_reset(studio2session *s)
@@ -445,6 +470,21 @@ int studio2session_keysym_name(uint32_t keysym, char *dst, int dstsz)
     return snprintf(dst, (size_t)dstsz, "Key 0x%X", keysym);
 }
 
+int studio2session_binding_text(studio2session *s, int target, char *dst, int dstsz)
+{
+    studio2_binding b;
+    int len = 0;
+    if (!dst || dstsz <= 0) return 0;
+    dst[0] = '\0';
+    b = studio2session_binding_get(s, target);
+    if (b.keysym)
+        len = studio2session_keysym_name(b.keysym, dst, dstsz);
+    if (b.button != STUDIO2_PAD_BTN_NONE && len < dstsz - 1)
+        len += snprintf(dst + len, (size_t)(dstsz - len), "%s%s", len ? " / " : "",
+                        studio2_pad_button_name(b.button));
+    return len < dstsz ? len : dstsz - 1;
+}
+
 /* ---- the keyboard translator --------------------------------------------- */
 
 int studio2session_key_sysaction(studio2session *s, uint32_t keysym)
@@ -473,7 +513,7 @@ int studio2session_key(studio2session *s, uint32_t keysym, int down)
             if (s->held_keysym[t] == folded) continue;  /* auto-repeat */
             s->held_keysym[t] = folded;
             pthread_mutex_unlock(&s_lock);
-            studio2session_press(s, t, 1);
+            input_source(s, t, STUDIO2_SRC_KEYBOARD, 1);
             pthread_mutex_lock(&s_lock);
         }
         if (!hit) {
@@ -486,7 +526,7 @@ int studio2session_key(studio2session *s, uint32_t keysym, int down)
                 if (s->held_keysym[t] == 0) {
                     s->held_keysym[t] = folded;
                     pthread_mutex_unlock(&s_lock);
-                    studio2session_press(s, t, 1);
+                    input_source(s, t, STUDIO2_SRC_KEYBOARD, 1);
                     pthread_mutex_lock(&s_lock);
                 }
             }
@@ -501,22 +541,10 @@ int studio2session_key(studio2session *s, uint32_t keysym, int down)
         for (t = 0; t < STUDIO2_TARGET_COUNT; t++) {
             if (s->held_keysym[t] == folded) {
                 s->held_keysym[t] = 0;
-                studio2session_press(s, t, 0);
+                input_source(s, t, STUDIO2_SRC_KEYBOARD, 0);
                 hit = 1;
             }
         }
         return hit;
-    }
-}
-
-void studio2session_release_all(studio2session *s)
-{
-    int t;
-    if (!s) return;
-    for (t = 0; t < STUDIO2_TARGET_COUNT; t++) {
-        if (s->held_keysym[t]) {
-            s->held_keysym[t] = 0;
-            studio2session_press(s, t, 0);
-        }
     }
 }

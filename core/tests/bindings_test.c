@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -94,6 +95,43 @@ int main(void)
     check(b.keysym == 0, "the old holder lost the key");
     check(studio2session_target_for_key(s, 'w') == STUDIO2_TARGET_PORT(1, STUDIO2_ACT_2), "the new holder has it");
 
+    /* F9, F11 and F12 are the app's: never bound */
+    {
+        static const uint32_t reserved[] = { STUDIO2_KEYSYM_F9, STUDIO2_KEYSYM_F11, STUDIO2_KEYSYM_F12 };
+        int ok = 1;
+        for (size_t k = 0; k < sizeof reserved / sizeof *reserved; k++) {
+            stolen[0] = 'x'; stolen[1] = 0;
+            studio2session_binding_set_key(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_3), reserved[k], stolen, sizeof stolen);
+            if (studio2session_target_for_key(s, reserved[k]) != -1 ||
+                studio2session_binding_get(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_3)).keysym != 'e')
+                ok = 0;
+        }
+        check(ok, "F9, F11 and F12 cannot be bound (the target keeps its key)");
+        check(studio2session_key(s, STUDIO2_KEYSYM_F9, 1) == 0 && studio2session_key(s, STUDIO2_KEYSYM_F12, 1) == 0,
+              "and are never consumed");
+        studio2session_binding_set_key(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_3), STUDIO2_KEYSYM_F10, stolen, sizeof stolen);
+        check(studio2session_target_for_key(s, STUDIO2_KEYSYM_F10) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_3),
+              "other function keys can");
+        studio2session_binding_set_key(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_3), 'e', stolen, sizeof stolen);
+    }
+
+    /* Clear: unbind a picked target's key and button */
+    {
+        studio2session_binding_set_button(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7), STUDIO2_PAD_BTN_WEST, NULL, 0);
+        studio2session_binding_text(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7), name, sizeof name);
+        check(!strcmp(name, "Z / X"), "binding_text names the key and the pad button");
+        studio2session_binding_clear(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7));
+        b = studio2session_binding_get(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7));
+        check(b.keysym == 0 && b.button == STUDIO2_PAD_BTN_NONE, "Clear unbinds both the key and the button");
+        studio2session_binding_text(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7), name, sizeof name);
+        check(name[0] == 0, "and the text is empty");
+        check(studio2session_target_for_key(s, 'z') == -1, "the cleared key drives nothing");
+        check(studio2session_target_for_key(s, STUDIO2_KEYSYM_UP) == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_2),
+              "the fixed extras are not bindings and stay");
+        studio2session_binding_clear(s, -1);
+        studio2session_binding_clear(s, STUDIO2_TARGET_COUNT);
+    }
+
     /* names */
     studio2session_keysym_name(STUDIO2_KEYSYM_F12, name, sizeof name);
     check(strcmp(name, "F12") == 0, "F12 names itself");
@@ -121,6 +159,7 @@ int main(void)
     studio2session_free(s);
     s = studio2session_new(&p);
     check(s && studio2session_target_for_key(s, 'w') == STUDIO2_TARGET_PORT(1, STUDIO2_ACT_2), "the rebinding persisted");
+    check(s && studio2session_binding_get(s, STUDIO2_TARGET_PORT(0, STUDIO2_ACT_7)).keysym == 0, "and so did the Clear");
     studio2session_bindings_reset(s);
     check(studio2session_target_for_key(s, 'w') == STUDIO2_TARGET_PORT(0, STUDIO2_ACT_2), "reset restores the defaults");
     studio2session_free(s);

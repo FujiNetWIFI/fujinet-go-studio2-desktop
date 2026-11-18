@@ -26,7 +26,7 @@ static const char *const platform_names[] = { "GNOME", "KDE", "Windows", "macOS"
 
 /* What the frontends' Help buttons and menus open. */
 static const char *const contexts[] = {
-    "main", "nobios", "import-sd", "keypad", "fujilog", "prefs/Machine",
+    "main", "nobios", "import-sd", "controllers", "fujilog", "prefs/Machine", "prefs/Input",
     "debugger/console", "debugger/disassembly", "debugger/memory", "debugger/breakpoints",
     "debugger/watches", "debugger/cart", "debugger/trace", "debugger/history",
     "debugger/video", "debugger/sound", "debugger/symbols", "debugger/fujinet",
@@ -49,6 +49,7 @@ static const struct {
 static const char *const settings_keys[] = {
     "use_bios", "aspect", "smooth", "enable_audio", "volume", "enable_gamepad", "analog_joystick",
     "enable_fujinet", "fujinet_external", "fujinet_external_addr", "cart", "bindings",
+    "pad_assign", "controllers_show_bindings",
 };
 
 /* The app's shortcuts, as a PC and as a Mac shows them. */
@@ -183,6 +184,28 @@ check_controls(studio2session *s, int p)
         require(p, "default-keys", "shortcut", platforms[p] == STUDIO2HELP_MACOS ? shortcuts[k].mac : shortcuts[k].pc);
 }
 
+/* The Controllers window: its buttons, the pad rows, and the count. */
+static void
+check_controllers(int p)
+{
+    static const char *const window[] = { "Map", "Clear", "Defaults", "Show bindings", "CONFIG", "STOP",
+                                          "Automatic", "Keypad A", "Keypad B" };
+    static const char *const pads[] = { "pad_assign", "Automatic", "Keypad A", "analog" };
+
+    for (size_t k = 0; k < sizeof window / sizeof *window; k++)
+        require(p, "controllers", "button", window[k]);
+    for (size_t k = 0; k < sizeof pads / sizeof *pads; k++)
+        require(p, "gamepads", "gamepad", pads[k]);
+    require(p, "controllers", "count", "23 in all");
+    require(p, "changing-the-controls", "binding", "F9");
+    require(p, "changing-the-controls", "binding", "F11");
+    require(p, "changing-the-controls", "binding", "F12");
+    require(p, "changing-the-controls", "binding", "Show bindings");
+    require(p, "changing-the-controls", "binding", "Clear");
+    require(p, "prefs/Input", "page", "Reset Controls");
+    require(p, "prefs/Input", "page", "Open Controllers");
+}
+
 /* The two ports, in the FujiNet topic. */
 static void
 check_ports(int p)
@@ -267,6 +290,7 @@ main(void)
     for (int p = 0; p < 4; p++) {
         check_prefs(s, p);
         check_controls(s, p);
+        check_controllers(p);
         check_ports(p);
         check_debugger(p);
     }

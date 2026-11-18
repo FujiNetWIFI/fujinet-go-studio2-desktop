@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "studio2session.h"
 #include "test_tmpdir.h"
@@ -27,6 +28,7 @@
 
 static int failures;
 static int vport;   /* the keypad the virtual pad was given */
+static int other_port = -1;   /* the keypad the second pad was left assigned to */
 
 static void sleep_ms(int ms)
 {
@@ -35,12 +37,12 @@ static void sleep_ms(int ms)
 }
 
 /* The pad thread syncs devices a few times a second and polls state
- * faster; give it two seconds. */
+ * faster; give it ten seconds (a slow CI runner). */
 static void expect(studio2session *s, unsigned want, int clear, const char *what)
 {
     unsigned held = 0;
     int c = 0;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 500; i++) {   /* 10 s */
         held = studio2session_buttons_held(s, vport);
         c = studio2session_switch_held(s, STUDIO2_SW_CLEAR);
         if (held == want && c == clear) {
@@ -54,6 +56,50 @@ static void expect(studio2session *s, unsigned want, int clear, const char *what
 }
 
 #define B(a) (1u << (a))
+
+static int pad_index(studio2session *s, const char *want)
+{
+    char name[64];
+    for (int i = 0; i < studio2session_gamepad_count(s); i++) {
+        studio2session_gamepad_name(s, i, name, sizeof name);
+        if (strcmp(name, want) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* Wait (10 s) for the named pad to be there (or gone). */
+static int wait_pad(studio2session *s, const char *name, int want_present)
+{
+    for (int i = 0; i < 500; i++) {
+        if ((pad_index(s, name) >= 0) == want_present)
+            return 1;
+        sleep_ms(20);
+    }
+    return 0;
+}
+
+static void check(int ok, const char *what)
+{
+    printf("%s: %s\n", ok ? "ok" : "FAIL", what);
+    if (!ok) failures++;
+}
+
+static SDL_JoystickID attach(const char *name, Uint16 product, SDL_Joystick **joy)
+{
+    SDL_VirtualJoystickDesc desc;
+    SDL_JoystickID id;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    desc.vendor_id = 0x1209;
+    desc.product_id = product;
+    desc.name = name;
+    id = SDL_AttachVirtualJoystick(&desc);
+    *joy = id ? SDL_OpenJoystick(id) : NULL;
+    return id;
+}
 
 int main(void)
 {
@@ -104,7 +150,7 @@ int main(void)
     if (!vj)
         return 1;
 
-    for (i = 0; i < 100 && studio2session_gamepad_count(s) <= baseline; i++)
+    for (i = 0; i < 500 && studio2session_gamepad_count(s) <= baseline; i++)
         sleep_ms(20);
     vport = -1;
     for (i = 0; i < studio2session_gamepad_count(s); i++) {
@@ -175,7 +221,7 @@ int main(void)
     SDL_SetJoystickVirtualAxis(vj, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 32767);
     {
         int btn = STUDIO2_PAD_BTN_NONE, got = 0;
-        for (i = 0; i < 100 && !got; i++) {
+        for (i = 0; i < 500 && !got; i++) {
             got = studio2session_gamepad_capture_poll(s, &btn);
             if (!got) sleep_ms(20);
         }
@@ -189,6 +235,96 @@ int main(void)
     SDL_SetJoystickVirtualAxis(vj, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 0);
     studio2session_bindings_reset(s);
 
+    /* sources are independent: the keyboard and the pad hold the same key,
+     * and the pad's button and its D-pad (the stick source) too */
+    {
+        const int t5 = STUDIO2_TARGET_PORT(vport, STUDIO2_ACT_5);
+        const uint32_t ksym = studio2session_binding_get(s, t5).keysym;
+        studio2session_key(s, ksym, 1);
+        expect(s, B(STUDIO2_ACT_5), 0, "the keyboard holds key 5");
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_EAST, true);
+        sleep_ms(100);
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_EAST, false);
+        sleep_ms(100);
+        expect(s, B(STUDIO2_ACT_5), 0, "the pad letting go of 5 leaves the keyboard's hold");
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_EAST, true);
+        sleep_ms(100);
+        studio2session_release_all(s);
+        expect(s, B(STUDIO2_ACT_5), 0, "the keyboard letting go of 5 leaves the pad's hold");
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_EAST, false);
+        expect(s, 0, 0, "released");
+
+        studio2session_binding_set_button(s, STUDIO2_TARGET_PORT(vport, STUDIO2_ACT_6),
+                                          STUDIO2_PAD_BTN_WEST, NULL, 0);
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, true);
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_WEST, true);
+        expect(s, B(STUDIO2_ACT_6), 0, "the D-pad and a button both hold key 6");
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_WEST, false);
+        sleep_ms(100);
+        expect(s, B(STUDIO2_ACT_6), 0, "the button letting go leaves the D-pad's hold");
+        SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, false);
+        expect(s, 0, 0, "released");
+        studio2session_bindings_reset(s);
+    }
+
+    /* a second pad: both keypads at once, and unplugging one releases only
+     * what it held */
+    {
+        SDL_Joystick *vj2;
+        SDL_JoystickID vid2 = attach(PAD_NAME " 2", 0x0002, &vj2);
+        int idx2, other = 1 - vport;
+        if (!vid2 || !vj2 || !wait_pad(s, PAD_NAME " 2", 1)) {
+            check(0, "a second virtual pad was picked up");
+        } else {
+            idx2 = pad_index(s, PAD_NAME " 2");
+            /* a real pad may be on the first keypad: fix both ends by hand */
+            studio2session_gamepad_assign(s, pad_index(s, PAD_NAME), vport);
+            studio2session_gamepad_assign(s, idx2, other);
+            check(studio2session_gamepad_effective_port(s, idx2) == other,
+                  "the second pad plays the other keypad");
+            sleep_ms(200);          /* the pad thread notices the move (and lets go) */
+            SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_SOUTH, true);
+            SDL_SetJoystickVirtualButton(vj2, SDL_GAMEPAD_BUTTON_SOUTH, true);
+            {
+                int ok = 0;
+                for (i = 0; i < 500 && !ok; i++) {
+                    ok = studio2session_buttons_held(s, vport) == B(STUDIO2_ACT_0) &&
+                         studio2session_buttons_held(s, other) == B(STUDIO2_ACT_0);
+                    if (!ok) sleep_ms(20);
+                }
+                check(ok, "each pad holds 0 on its own keypad");
+            }
+            SDL_SetJoystickVirtualButton(vj2, SDL_GAMEPAD_BUTTON_SOUTH, false);
+            sleep_ms(200);
+            check(studio2session_buttons_held(s, vport) == B(STUDIO2_ACT_0) &&
+                  studio2session_buttons_held(s, other) == 0, "one letting go leaves the other's hold");
+            SDL_SetJoystickVirtualButton(vj2, SDL_GAMEPAD_BUTTON_SOUTH, true);
+            sleep_ms(200);
+
+            /* an explicit assignment is remembered by the settings, and a
+             * reconnect gets it back */
+            check(strstr(studio2session_get_str(s, "pad_assign", ""), PAD_NAME " 2") != NULL,
+                  "an explicit assignment is written to the pad_assign setting");
+            SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_SOUTH, false);
+            SDL_SetJoystickVirtualButton(vj2, SDL_GAMEPAD_BUTTON_SOUTH, false);
+            SDL_CloseJoystick(vj2);
+            SDL_DetachVirtualJoystick(vid2);
+            check(wait_pad(s, PAD_NAME " 2", 0), "the second pad is unplugged");
+            expect(s, 0, 0, "and nothing is left held");
+            vid2 = attach(PAD_NAME " 2", 0x0002, &vj2);
+            check(vid2 && vj2 && wait_pad(s, PAD_NAME " 2", 1), "and plugged back in");
+            idx2 = pad_index(s, PAD_NAME " 2");
+            check(idx2 >= 0 && studio2session_gamepad_assignment(s, idx2) == other,
+                  "it gets its explicit assignment back");
+
+            /* it stays assigned to the other keypad for the next run */
+            SDL_CloseJoystick(vj2);
+            SDL_DetachVirtualJoystick(vid2);
+            wait_pad(s, PAD_NAME " 2", 0);
+            other_port = other;
+        }
+    }
+
     /* hot-unplug while held: the keypad is released, not left holding the
      * last direction forever */
     SDL_SetJoystickVirtualButton(vj, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, true);
@@ -196,7 +332,7 @@ int main(void)
     expect(s, B(STUDIO2_ACT_6) | B(STUDIO2_ACT_0), 0, "held before the unplug");
     SDL_CloseJoystick(vj);
     SDL_DetachVirtualJoystick(vid);
-    for (i = 0; i < 100 && studio2session_gamepad_count(s) != baseline; i++)
+    for (i = 0; i < 500 && studio2session_gamepad_count(s) != baseline; i++)
         sleep_ms(20);
     if (studio2session_gamepad_count(s) == baseline)
         printf("ok: the unplugged pad is gone\n");
@@ -206,6 +342,30 @@ int main(void)
         failures++;
     }
     expect(s, 0, 0, "and its keypad is released");
+
+    /* ...and a new run restores it from the settings */
+    if (other_port >= 0) {
+        SDL_Joystick *vj2;
+        SDL_JoystickID vid2;
+        int idx2;
+        studio2session_stop(s);
+        studio2session_free(s);
+        s = studio2session_new(&p);
+        studio2session_default_opts(s, &o);
+        o.enable_fujinet = 0; o.enable_audio = 0; o.enable_gamepad = 1;
+        check(s && studio2session_start(s, &o) == 0, "a new session starts");
+        vid2 = attach(PAD_NAME " 2", 0x0002, &vj2);
+        check(vid2 && vj2 && wait_pad(s, PAD_NAME " 2", 1), "the second pad is plugged in");
+        idx2 = pad_index(s, PAD_NAME " 2");
+        check(idx2 >= 0 && studio2session_gamepad_assignment(s, idx2) == other_port,
+              "and the next run restores its assignment from the settings");
+        studio2session_gamepad_assign(s, idx2, -1);
+        check(strstr(studio2session_get_str(s, "pad_assign", ""), PAD_NAME " 2") == NULL,
+              "choosing Automatic forgets it");
+        SDL_CloseJoystick(vj2);
+        SDL_DetachVirtualJoystick(vid2);
+        wait_pad(s, PAD_NAME " 2", 0);
+    }
 
     studio2session_stop(s);
     studio2session_free(s);

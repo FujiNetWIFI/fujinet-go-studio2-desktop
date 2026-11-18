@@ -220,18 +220,68 @@ typedef enum {
 #define STUDIO2_TARGET_SYSACT(sa)      (2 * STUDIO2_ACT_PER_PORT + STUDIO2_SW_COUNT + (sa))
 #define STUDIO2_TARGET_COUNT           (2 * STUDIO2_ACT_PER_PORT + STUDIO2_SW_COUNT + STUDIO2_SYSACT_COUNT)
 
-/* Apply one control directly. `down` is press/release. The console buttons
- * are held, as the console samples them once a frame. */
+/* ---- driving the machine --------------------------------------------------
+ * Each input source (the keyboard, the Controllers window's pointer, and each
+ * gamepad's buttons and stick) keeps its own holds; the machine sees their
+ * union, so one source letting go never cancels another's hold. All of it is
+ * under one lock (input.c), safe from the UI and gamepad threads. */
+
+/* The Controllers window's mouse pressing or releasing a target (a keypad
+ * key, or CLEAR): the POINTER source. A system action target fires on the
+ * press (it is never held). Always release on mouse-up, focus loss, Map entry
+ * and hide: a CLEAR that stays down holds the CPU in reset. */
+void studio2session_pointer_press(studio2session *s, int target, int down);
+/* The same as studio2session_pointer_press (kept for older callers). */
 void studio2session_press(studio2session *s, int target, int down);
 void studio2session_sysaction(studio2session *s, int sysact);
-/* Release everything the keyboard holds (focus loss). */
+/* Let go of everything the pointer holds (mouse up, focus lost, Map armed,
+ * window hidden). The keyboard's and the pads' holds are untouched. */
+void studio2session_release_pointer(studio2session *s);
+/* Release everything the keyboard holds (focus loss). The pointer's and the
+ * pads' holds are left alone. */
 void studio2session_release_all(studio2session *s);
 /* What the console sees held on a keypad right now (keyboard, gamepads and
- * the keypad window together), one bit per studio2_action. For the keypad
+ * the Controllers window together), one bit per studio2_action. For the
  * window's highlights. */
 unsigned studio2session_buttons_held(studio2session *s, int port);
 /* Whether a console button is held (studio2_switch). */
 int studio2session_switch_held(studio2session *s, int sw);
+/* 1 while any source holds the target (a keypad key or CLEAR); 0 for a system
+ * action. The window paints it lit. */
+int studio2session_target_held(studio2session *s, int target);
+
+/* ---- the on-screen Controllers (controls.c) ----------------------------------
+ * One layout for the four toolkits, and its hit test. Plan view of the
+ * console's top in key units (a key is 1.25 x 1.0): two 3x3+1 keypad wells,
+ * A on the left and B on the right, the centre panel with the CLEAR bar and
+ * the LED, and the CONFIG and STOP buttons. No colours here. Entries are in
+ * paint order; 23 targets in all (20 keys, CLEAR, 2 system actions). */
+typedef enum {
+    STUDIO2_CTL_WELL = 0,   /* the recessed well of a keypad (port; drawn, never pressed) */
+    STUDIO2_CTL_CAPTION,    /* text: label "A", "B", "RCA", "Studio II", "HOME TV PROGRAMMER", "CLEAR" */
+    STUDIO2_CTL_PANEL,      /* the centre plates: label "gold", "ribbed" or "silver" (drawn) */
+    STUDIO2_CTL_LED,        /* the red LED: lit while CLEAR is held (target = CLEAR; never pressed) */
+    STUDIO2_CTL_KEY,        /* a keypad key (port, target = STUDIO2_TARGET_PORT(port, key)) */
+    STUDIO2_CTL_CLEAR,      /* the CLEAR bar (target = STUDIO2_TARGET_SWITCH(CLEAR)) */
+    STUDIO2_CTL_SYSBUTTON   /* CONFIG / STOP (target = STUDIO2_TARGET_SYSACT(..)) */
+} studio2_control_kind;
+
+typedef struct {
+    int kind;               /* studio2_control_kind */
+    const char *label;      /* "7", "CLEAR", "CONFIG", "A" */
+    int port;               /* 0 = keypad A, 1 = keypad B, -1 = the console */
+    int target;             /* STUDIO2_TARGET_*, or -1 (wells, captions, panels) */
+    float xpos, ypos, width, height;   /* layout units, from the top-left */
+} studio2_control;
+
+const studio2_control *studio2session_controls_layout(int *count, float *width,
+                                                      float *height);
+/* The index into the layout of the topmost pressable control (KEY, CLEAR or
+ * SYSBUTTON) under a point (layout units), or -1. Exact rectangles. */
+int studio2session_controls_hit(float xpos, float ypos);
+/* The legend on a target's key: "0".."9", "CLEAR", "CONFIG", "STOP"; "" for
+ * anything else. */
+const char *studio2session_key_label(int target);
 
 /* ---- keyboard translation ------------------------------------------------
  * keysym is an X11/xkb keysym (== a GDK keyval; Qt, Win32 and AppKit map
@@ -278,7 +328,8 @@ int studio2session_keysym_name(uint32_t keysym, char *dst, int dstsz);
  * Rebinding STEALS: a key drives exactly one target, because one keystroke
  * doing two things is worse than losing the old binding. Persisted in the
  * settings store under "bindings" as only the entries that differ from the
- * defaults. */
+ * defaults. F9 (the Controllers window), F11 (full screen) and F12 (the
+ * debugger) are never bound: binding_set_key ignores them. */
 typedef enum {
     STUDIO2_PAD_BTN_NONE = -1,
     STUDIO2_PAD_BTN_SOUTH = 0, STUDIO2_PAD_BTN_EAST, STUDIO2_PAD_BTN_WEST,
@@ -313,7 +364,14 @@ void studio2session_binding_set_key(studio2session *s, int target, uint32_t keys
                                 char *stolen, int stolensz);
 void studio2session_binding_set_button(studio2session *s, int target, int button,
                                    char *stolen, int stolensz);
+/* Clear: unbind the target's key AND gamepad button (Map mode's Clear). The
+ * fixed extras (arrows, Ctrl, Return on keypad A) are not bindings and stay. */
+void studio2session_binding_clear(studio2session *s, int target);
 void studio2session_bindings_reset(studio2session *s);
+/* What a target is bound to, for Show bindings and Map: the key's name, then
+ * " / " and the gamepad button's name when it has one ("Q / A"), or "" when
+ * it has neither. Returns the length. */
+int studio2session_binding_text(studio2session *s, int target, char *dst, int dstsz);
 const char *studio2_pad_button_name(int button);
 /* The target a keysym / pad button drives, or -1. */
 int studio2session_target_for_key(studio2session *s, uint32_t keysym);

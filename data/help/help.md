@@ -20,7 +20,7 @@ once and can load games from the network.
 3. **Or open a cartridge of your own.** **Open Cartridge…**
    (<kbd>Ctrl+O</kbd>) takes a `.st2`, `.bin` or `.rom` image. See
    [Cartridges](#cartridges).
-4. **Play.** The keys, the gamepads and the Keypad window (<kbd>F9</kbd>) work
+4. **Play.** The keys, the gamepads and the Controllers window (<kbd>F9</kbd>) work
    the two keypads and CLEAR. See [Controllers and keys](#controllers-and-keys).
 5. **Change the console.** [Preferences](#preferences) picks the BIOS, the
    picture, the sound and FujiNet.
@@ -29,7 +29,7 @@ once and can load games from the network.
 
 The list on the left has a topic for each part of the app; the search box
 above it finds every section that has all the words you type. A **Help**
-button in Preferences, the Debugger, the Keypad window and the FujiNet
+button in Preferences, the Debugger, the Controllers window and the FujiNet
 console log opens the topic for what it shows, and
 <kbd>Ctrl+Shift+H</kbd> does the same for the window you are in.
 
@@ -57,7 +57,7 @@ The console's picture fills the window. The menus have:
   **Import BIOS…**: see [Cartridges](#cartridges) and
   [BIOS and ROMs](#bios-and-roms).
 - **CLEAR** and **Reset to CONFIG**.
-- **Keypad** (<kbd>F9</kbd>) and **Debugger** (<kbd>F12</kbd>).
+- **Controllers** (<kbd>F9</kbd>) and **Debugger** (<kbd>F12</kbd>).
 - **TV Aspect**, **Smooth Scaling** and **Fullscreen** (<kbd>F11</kbd>).
 - **FujiNet Web UI** and **Console Log**.
 - **Preferences** (<kbd>Ctrl+,</kbd>), **Help**, **About** and **Quit**.
@@ -154,7 +154,7 @@ The app keeps these keys for itself:
 | <kbd>Ctrl+R</kbd> | Reset to CONFIG |
 | <kbd>Ctrl+,</kbd> | Preferences |
 | <kbd>Ctrl+Shift+H</kbd> | Help |
-| <kbd>F9</kbd> | Keypad |
+| <kbd>F9</kbd> | Controllers |
 | <kbd>F11</kbd> | Fullscreen |
 | <kbd>F12</kbd> | Debugger |
 
@@ -185,31 +185,43 @@ time. A pad steers with the keys the games use: 2 4 6 8, the diagonals on 1 3 7
 plain USB adapter) uses its raw buttons and hats. With **Analog sticks steer
 too** on, the left stick does too.
 
+Under the keypads in the Controllers window a row for each gamepad says which
+keypad it plays: **Automatic**, **Keypad A** or **Keypad B**. A choice applies at
+once and is remembered (setting `pad_assign`): the gamepad gets it back when it is
+plugged in again, and on the next run.
+
 ## Changing the controls
 
-The controls are changed in the Keypad window (<kbd>F9</kbd>): click **Map**,
+The controls are changed in the Controllers window (<kbd>F9</kbd>): click **Map**,
 then click a key, then press the keyboard key or the gamepad button to give it.
-The control's old key or button is taken from it. **Defaults** puts every
-control back. The map is kept in the settings, and only what differs from the
-defaults is written.
+The control's old key or button is taken from it. **Clear** unbinds the key you
+picked, and **Defaults** puts every control back. **Show bindings** writes each
+control's key on it (setting `controllers_show_bindings`). <kbd>F9</kbd>,
+<kbd>F11</kbd> and <kbd>F12</kbd> cannot be bound. The map is kept in the
+settings, and only what differs from the defaults is written.
 
-<!-- context: keypad -->
-# Keypad window
+<!-- context: controllers -->
+# Controllers window
 
-The Keypad window (<kbd>F9</kbd>) shows both keypads live, with CLEAR, and
-presses their keys with the mouse. It floats on its own at a fixed size. The
+The Controllers window (<kbd>F9</kbd>) is the console's top: both keypads live,
+the CLEAR bar and its LED, and the **CONFIG** and **STOP** buttons: 23 in all.
+Click a key to press it. It floats on its own at a fixed size. The
 keys that are held light up in the accent colour, whoever holds them: the
 keyboard, a gamepad or the mouse.
 
 | With the mouse | Does |
 |---|---|
 | Press a keypad key | Holds it for as long as the button is down |
-| Press CLEAR | Holds it |
+| Press CLEAR | Holds it (the console is in reset while it is down) |
+| Press CONFIG or STOP | Resets to CONFIG, or stops in the debugger |
+
+Under the keypads a row for each gamepad says which keypad it plays:
+**Automatic**, **Keypad A** or **Keypad B** (see [Gamepads](#gamepads)).
 
 The console samples its keys once a frame, so a key is *held*, not pulsed, as
 the plastic one is. Switching to another window lets go of everything the mouse
-holds. Keys typed in the Keypad window go to the console. **Map** and
-**Defaults** change the controls (see
+holds. Keys typed in the Controllers window go to the console. **Map**, **Clear**, **Defaults** and
+**Show bindings** change the controls (see
 [Changing the controls](#changing-the-controls)).
 
 # Machines
@@ -369,6 +381,7 @@ On Windows this window is called **Settings** (in the Machine menu).
 - **Enable audio**: open the system audio device (setting `enable_audio`).
 - **Volume**: the output level, 0 to 100 (setting `volume`).
 
+<!-- context: prefs/Input -->
 ## Input settings
 
 - **Enable gamepads**: poll USB and Bluetooth gamepads (setting
@@ -377,8 +390,12 @@ On Windows this window is called **Settings** (in the Machine menu).
   `analog_joystick`).
 - **Gamepads**: each one plugged in, and which keypad it drives. A new gamepad
   drives keypad A, the next keypad B; choose *Keypad A* or *Keypad B* to fix
-  it, or *Automatic*. The keys and buttons are changed in the Keypad window
-  (see [Changing the controls](#changing-the-controls)).
+  it, or *Automatic*; a choice is remembered (setting `pad_assign`). The keys
+  and buttons are changed in the Controllers window (see
+  [Changing the controls](#changing-the-controls)).
+- **Reset Controls**: puts every key and gamepad button back to its default.
+- **Open Controllers**: opens the [Controllers window](#controllers-window),
+  where the controls are changed.
 
 ## FujiNet settings
 
@@ -393,7 +410,9 @@ On Windows this window is called **Settings** (in the Machine menu).
 
 The settings file is `settings.ini` (see [Files and folders](#files-and-folders)).
 Each setting above names its key. The others are `cart` (the opened cartridge,
-empty for CONFIG) and `bindings` (the controls that differ from the defaults).
+empty for CONFIG), `bindings` (the controls that differ from the defaults),
+`controllers_show_bindings` (Show bindings) and `pad_assign` (the gamepads given
+a keypad by hand).
 
 # Debugger
 

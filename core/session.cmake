@@ -10,6 +10,9 @@ set(STUDIO2_SESSION_SOURCES
   src/fujinet_runtime.c
   src/audio_sdl.c
   src/bindings.c
+  src/input.c
+  src/controls.c
+  src/pad_assign.c
   src/hid_keys.c
   src/gamepad_sdl.c
   src/debug.c

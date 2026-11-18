@@ -85,6 +85,7 @@ studio2session *studio2session_new(const studio2session_paths *paths)
     pthread_mutex_init(&s->settings_mtx, NULL);
     pthread_mutex_init(&s->sysact_mtx, NULL);
     pthread_mutex_init(&s->pad_event_mtx, NULL);
+    pthread_mutex_init(&s->input_mtx, NULL);
 
     if (paths_init(s, paths ? paths->config_dir : NULL,
                    paths ? paths->data_dir : NULL) != 0) {
@@ -115,6 +116,7 @@ void studio2session_free(studio2session *s)
     pthread_mutex_destroy(&s->settings_mtx);
     pthread_mutex_destroy(&s->sysact_mtx);
     pthread_mutex_destroy(&s->pad_event_mtx);
+    pthread_mutex_destroy(&s->input_mtx);
     free(s);
 }
 
@@ -273,8 +275,10 @@ int studio2session_start(studio2session *s, const studio2session_start_opts *opt
         opts = &local;
     }
     adopt_opts(s, opts);
+    pthread_mutex_lock(&s->input_mtx);
     memset(s->pad_src, 0, sizeof s->pad_src);
     memset(s->sw_src, 0, sizeof s->sw_src);
+    pthread_mutex_unlock(&s->input_mtx);
     studio2_host_release_all();
     studio2debug_trace_fujinet(s);
 
@@ -549,52 +553,6 @@ void studio2session_set_volume(studio2session *s, int percent)
 
 /* ---- input ----------------------------------------------------------------- */
 
-static void apply_pad(struct studio2session *s, int port)
-{
-    uint16_t mask = 0;
-    for (int a = 0; a < STUDIO2_ACT_PER_PORT; a++)
-        if (s->pad_src[port][a])
-            mask |= (uint16_t)(1u << a);
-    studio2_host_keypad_set(port, mask);
-}
-
-static void pad_src(struct studio2session *s, int port, int act, int down, uint8_t src)
-{
-    if (down)
-        s->pad_src[port][act] |= src;
-    else
-        s->pad_src[port][act] &= (uint8_t)~src;
-    apply_pad(s, port);
-}
-
-static void switch_src(struct studio2session *s, int sw, int down, uint8_t src)
-{
-    if (down)
-        s->sw_src[sw] |= src;
-    else
-        s->sw_src[sw] &= (uint8_t)~src;
-    if (sw == STUDIO2_SW_CLEAR)
-        studio2_host_clear_set(s->sw_src[sw] != 0);
-}
-
-void studio2session_press(studio2session *s, int target, int down)
-{
-    if (!s->running || target < 0 || target >= STUDIO2_TARGET_COUNT)
-        return;
-
-    if (target < 2 * STUDIO2_ACT_PER_PORT) {
-        pad_src(s, target / STUDIO2_ACT_PER_PORT, target % STUDIO2_ACT_PER_PORT, down, 1);
-        return;
-    }
-    target -= 2 * STUDIO2_ACT_PER_PORT;
-    if (target < STUDIO2_SW_COUNT) {
-        switch_src(s, target, down, 1);
-        return;
-    }
-    if (down)
-        studio2session_sysaction(s, target - STUDIO2_SW_COUNT);
-}
-
 void studio2session_sysaction(studio2session *s, int sysact)
 {
     switch (sysact) {
@@ -637,33 +595,6 @@ int studio2session_sysaction_take(studio2session *s, int *out)
     }
     pthread_mutex_unlock(&s->sysact_mtx);
     return found;
-}
-
-unsigned studio2session_buttons_held(studio2session *s, int port)
-{
-    unsigned held = 0;
-    if (port < 0 || port > 1)
-        return 0;
-    for (int a = 0; a < STUDIO2_ACT_PER_PORT; a++)
-        if (s->pad_src[port][a])
-            held |= 1u << a;
-    return held;
-}
-
-int studio2session_switch_held(studio2session *s, int sw)
-{
-    if (sw < 0 || sw >= STUDIO2_SW_COUNT)
-        return 0;
-    return s->sw_src[sw] != 0;
-}
-
-/* The gamepad thread's entry point: the same routing as press, from the
- * pad's own source bit, never touching the settings or the debugger. */
-void session_gamepad_apply(struct studio2session *s, int port, int act, int down)
-{
-    if (!s->running || port < 0 || port > 1 || act < 0 || act >= STUDIO2_ACT_PER_PORT)
-        return;
-    pad_src(s, port, act, down, 2);
 }
 
 void studio2session_set_analog(studio2session *s, int joystick)

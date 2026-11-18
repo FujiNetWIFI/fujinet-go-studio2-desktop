@@ -21,6 +21,20 @@ extern "C" {
 
 #define STUDIO2_PATH_MAX 1024
 
+/* Input sources (input.c): each holds a target by its own bit. */
+#define STUDIO2_MAX_PADS     8
+#define STUDIO2_SRC_KEYBOARD (1u << 0)
+#define STUDIO2_SRC_POINTER  (1u << 1)
+#define STUDIO2_SRC_PAD(o)   (1u << (2 + (o)))
+#define STUDIO2_SRC_STICK(o) (1u << (2 + STUDIO2_MAX_PADS + (o)))
+
+/* input.c: set or clear source `src` on a held target (keypad key or CLEAR);
+ * the machine sees the union. A system action target is ignored. */
+void input_source(struct studio2session *s, int target, uint32_t src, int down);
+/* Clear the sources in `mask` from every target. */
+void input_clear_sources(struct studio2session *s, uint32_t mask);
+/* Push every merged value to the machine again (after it starts). */
+void input_resync(struct studio2session *s);
 typedef struct setting_kv {
     char *key;
     char *val;
@@ -66,11 +80,14 @@ struct studio2session {
      * exactly what its press asserted even if the binding changed meanwhile */
     uint32_t held_keysym[STUDIO2_TARGET_COUNT];
 
-    /* what drives each keypad key and console button: the keyboard and
-     * the keypad window (bit 0) and each keypad's gamepad (bit 1),
-     * combined so letting go of one never releases the other */
-    uint8_t pad_src[2][STUDIO2_ACT_PER_PORT];
-    uint8_t sw_src[STUDIO2_SW_COUNT];
+    /* what drives each keypad key and console button: one STUDIO2_SRC_*
+     * bit per source (the keyboard, the Controllers window's pointer, and
+     * for each gamepad its buttons and its stick), under input_mtx (input.c),
+     * so letting go of one source never releases another and the UI thread
+     * and the gamepad thread never race */
+    pthread_mutex_t input_mtx;
+    uint32_t pad_src[2][STUDIO2_ACT_PER_PORT];
+    uint32_t sw_src[STUDIO2_SW_COUNT];
 
     void *audio;              /* audio_sdl.c state, NULL until started */
     void *gamepad;            /* gamepad_sdl.c state, NULL until started */
@@ -121,8 +138,15 @@ void audio_stop(struct studio2session *s);
 /* gamepad_sdl.c */
 int  gamepad_start(struct studio2session *s);
 void gamepad_stop(struct studio2session *s);
-/* Called by the gamepad thread with the button/axis state it resolved. */
-void session_gamepad_apply(struct studio2session *s, int port, int act, int down);
+/* Called by the gamepad thread with the state it resolved (input.c). A pad
+ * has a stable owner number, 0..STUDIO2_MAX_PADS-1, while it is connected.
+ * apply: the D-pad, hat or stick of `owner` holds keypad key `act` of `port`
+ * (its STUDIO2_SRC_STICK source). target: a pad BUTTON holds or releases a
+ * target (its STUDIO2_SRC_PAD source). release: the pad is gone or moved:
+ * let go of everything it held. */
+void session_gamepad_apply(struct studio2session *s, int owner, int port, int act, int down);
+void session_gamepad_target(struct studio2session *s, int owner, int target, int down);
+void session_gamepad_release(struct studio2session *s, int owner);
 /* Called by the gamepad thread on a connect/disconnect. */
 void session_gamepad_event(struct studio2session *s, const char *text);
 

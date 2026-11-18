@@ -109,6 +109,16 @@ add_test(NAME help COMMAND help_test)
 studio2_session_test(bindings_test bindings_test.c)
 add_test(NAME bindings COMMAND bindings_test)
 
+# The merged input layer (sources, CLEAR release), the Controllers layout and
+# the remembered pad assignments (pure).
+studio2_session_test(input_test input_test.c)
+add_test(NAME input COMMAND input_test)
+set_tests_properties(input PROPERTIES TIMEOUT 120)
+studio2_session_test(controls_test controls_test.c)
+add_test(NAME controls COMMAND controls_test)
+studio2_session_test(pad_assign_test pad_assign_test.c)
+add_test(NAME pad_assign COMMAND pad_assign_test)
+
 # The frontends' configuration: the built-in BIOS (studio2_bios_full) in use.
 add_executable(bios_builtin_test bios_builtin_test.c)
 target_link_libraries(bios_builtin_test PRIVATE studio2_session studio2_bios_full)
