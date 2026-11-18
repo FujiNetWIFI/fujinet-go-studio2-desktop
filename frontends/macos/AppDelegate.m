@@ -14,7 +14,7 @@
 
 #import "DisplayView.h"
 #import "KeyForward.h"
-#import "keypad/KeypadWindow.h"
+#import "controllers/ControllersWindow.h"
 #import "debugger/DebuggerWindow.h"
 #import "help/HelpWindow.h"
 
@@ -57,6 +57,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
 @interface Studio2AppDelegate ()
 - (void)runSysaction:(int)sa;
 - (void)loadMedia:(NSString *)path;
+- (void)toggleControllers:(id)sender;
 @end
 
 @implementation Studio2ContentView
@@ -72,7 +73,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     if ([e modifierFlags] & NSEventModifierFlagCommand) return;
     const uint32_t ks = Studio2KeysymFromEvent(e);
     if (!ks) return;
-    if (ks == STUDIO2_KEYSYM_F9) { [Studio2KeypadWindow toggleWithSession:self.session]; return; }
+    if (ks == STUDIO2_KEYSYM_F9) { [self.owner toggleControllers:nil]; return; }
     if (ks == STUDIO2_KEYSYM_F11) { [[self window] toggleFullScreen:nil]; return; }
     if (ks == STUDIO2_KEYSYM_F12) { [Studio2DebuggerWindow toggleForSession:self.session]; return; }
 
@@ -123,6 +124,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     Studio2ContentView *_content;
     NSTimer *_statusTimer;
     NSTimer *_sysactTimer;
+    Studio2ControllersWindow *_controllers;   /* hidden until F9 */
     BOOL _needsBiosShown;        /* the "needs the BIOS" alert, once per occurrence */
 
     /* the transient gamepad hot-plug / import message */
@@ -138,7 +140,8 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
 
     NSWindow *_settingsWindow;
     BOOL _sessionDirty;
-    NSPopUpButton *_padList, *_padPort, *_aspectPopup;
+    NSPopUpButton *_aspectPopup;
+    NSStackView *_padRowsStack;     /* Settings: one row per connected gamepad */
     NSTextField *_biosStatus;
     NSButton *_biosImport;
     NSTextField *_webUiLabel, *_externalField;
@@ -243,19 +246,21 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     }
     _launched = YES;
     _toastGeneration = studio2session_gamepad_generation(_session);
+    _controllers = [[Studio2ControllersWindow alloc] initWithSession:_session];
     if (media) [self loadMedia:media];
 
     /* The family's launch hooks, for when the app misbehaves before a menu
      * is reachable. */
-    if (getenv("STUDIO2_OPEN_KEYPAD")) [Studio2KeypadWindow toggleWithSession:_session];
+    if (getenv("STUDIO2_OPEN_CONTROLLERS") || getenv("STUDIO2_OPEN_KEYPAD")) [_controllers toggle];
     if (getenv("STUDIO2_OPEN_DEBUGGER")) [Studio2DebuggerWindow showForSession:_session];
     if (getenv("STUDIO2_OPEN_SETTINGS")) [self showSettings:nil];
 
     _statusTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
         block:^(NSTimer *t) { (void)t; [self updateTitle]; }];
     /* System actions the gamepad thread resolved (it cannot touch AppKit),
-     * gamepads coming and going, and a game that needs the BIOS. */
-    _sysactTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES
+     * gamepads coming and going, and a game that needs the BIOS: drained
+     * every 50 ms. */
+    _sysactTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES
         block:^(NSTimer *t) {
             (void)t;
             int sa;
@@ -456,7 +461,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
 
     NSMenuItem *viewItem = [[NSMenuItem alloc] init];
     NSMenu *view = [[NSMenu alloc] initWithTitle:@"View"];
-    [self item:view title:@"Keypad (F9)" action:@selector(toggleKeypad:) key:@"j"];
+    [self item:view title:@"Controllers (F9)" action:@selector(toggleControllers:) key:@"j"];
     [self item:view title:@"Debugger (F12)" action:@selector(toggleDebugger:) key:@"d"];
     [view addItem:[NSMenuItem separatorItem]];
     _aspectItem = [self item:view title:@"TV Aspect" action:@selector(toggleAspect:) key:@""];
@@ -713,7 +718,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     return [NSString stringWithFormat:@"%@ (%s)", base, key];
 }
 
-/* The console items' titles follow the bindings (the Keypad panel remaps
+/* The console items' titles follow the bindings (the Controllers window remaps
  * them). */
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
@@ -731,7 +736,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     return YES;
 }
 
-- (void)toggleKeypad:(id)sender { (void)sender; [Studio2KeypadWindow toggleWithSession:_session]; }
+- (void)toggleControllers:(id)sender { (void)sender; [_controllers toggle]; }
 - (void)toggleDebugger:(id)sender { (void)sender; [Studio2DebuggerWindow toggleForSession:_session]; }
 
 /* aspect 0: the TV's 4:3 (the default); 1: square pixels. */
@@ -816,40 +821,64 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     _biosStatus.stringValue = [self biosStatusText];
 }
 
+/* One row per connected gamepad -- its name, and which keypad it plays --
+ * rebuilt when a pad comes or goes (the pad generation changes). */
 - (void)refreshPadList
 {
-    const NSInteger sel = _padList.indexOfSelectedItem;
-    [_padList removeAllItems];
+    if (!_padRowsStack) return;
+    for (NSView *old in [_padRowsStack.arrangedSubviews copy]) {
+        [_padRowsStack removeArrangedSubview:old];
+        [old removeFromSuperview];
+    }
     const int n = studio2session_gamepad_count(_session);
-    if (n == 0) [_padList addItemWithTitle:@"(no gamepads connected)"];
+    if (n == 0) {
+        NSTextField *none = [NSTextField labelWithString:@"No gamepads connected"];
+        none.textColor = NSColor.secondaryLabelColor;
+        [_padRowsStack addArrangedSubview:none];
+        return;
+    }
     for (int i = 0; i < n; i++) {
         char name[128];
-        const int eff = studio2session_gamepad_effective_port(_session, i);
         studio2session_gamepad_name(_session, i, name, sizeof name);
-        /* Menu items with equal titles collapse; the index keeps them apart. */
-        [_padList addItemWithTitle:(eff >= 0
-            ? [NSString stringWithFormat:@"%d: %s  [keypad %c]", i + 1, name, 'A' + eff]
-            : [NSString stringWithFormat:@"%d: %s  [unused]", i + 1, name])];
+        const int eff = studio2session_gamepad_effective_port(_session, i);
+        NSTextField *label = [NSTextField labelWithString:(eff >= 0
+            ? [NSString stringWithFormat:@"%s  [keypad %c]", name, 'A' + eff]
+            : [NSString stringWithFormat:@"%s  [unused]", name])];
+        label.lineBreakMode = NSLineBreakByTruncatingTail;
+        [label.widthAnchor constraintLessThanOrEqualToConstant:300].active = YES;
+        NSPopUpButton *port = [[NSPopUpButton alloc] init];
+        [port addItemsWithTitles:@[@"Automatic", @"Keypad A", @"Keypad B"]];
+        [port selectItemAtIndex:studio2session_gamepad_assignment(_session, i) + 1];
+        port.tag = i;
+        port.target = self;
+        port.action = @selector(padPortChanged:);
+        NSStackView *row = [NSStackView stackViewWithViews:@[label, port]];
+        row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+        row.spacing = 8;
+        [_padRowsStack addArrangedSubview:row];
     }
-    if (sel >= 0 && sel < n) [_padList selectItemAtIndex:sel];
-    [self padSelected:nil];
 }
 
-- (void)padSelected:(id)sender
+- (void)padPortChanged:(NSPopUpButton *)sender
 {
-    (void)sender;
-    const NSInteger sel = _padList.indexOfSelectedItem;
-    if (sel >= 0 && sel < studio2session_gamepad_count(_session))
-        [_padPort selectItemAtIndex:studio2session_gamepad_assignment(_session, (int)sel) + 1];
-}
-
-- (void)padPortChanged:(id)sender
-{
-    (void)sender;
-    const NSInteger sel = _padList.indexOfSelectedItem;
-    if (sel >= 0 && sel < studio2session_gamepad_count(_session))
-        studio2session_gamepad_assign(_session, (int)sel, (int)_padPort.indexOfSelectedItem - 1);
+    studio2session_gamepad_assign(_session, (int)sender.tag, (int)sender.indexOfSelectedItem - 1);
     [self refreshPadList];
+}
+
+/* Reset Controls: the default bindings back (the Controllers window reads
+ * them again). */
+- (void)resetControls:(id)sender
+{
+    (void)sender;
+    studio2session_bindings_reset(_session);
+    [_controllers refresh];
+    [self showToast:@"Default controls restored"];
+}
+
+- (void)openControllers:(id)sender
+{
+    (void)sender;
+    [_controllers show];
 }
 
 - (void)volumeChanged:(NSSlider *)sender
@@ -923,13 +952,10 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     biosRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     biosRow.alignment = NSLayoutAttributeCenterY;
 
-    _padList = [[NSPopUpButton alloc] init];
-    _padList.target = self;
-    _padList.action = @selector(padSelected:);
-    _padPort = [[NSPopUpButton alloc] init];
-    [_padPort addItemsWithTitles:@[@"Automatic", @"Keypad A", @"Keypad B"]];
-    _padPort.target = self;
-    _padPort.action = @selector(padPortChanged:);
+    _padRowsStack = [[NSStackView alloc] init];
+    _padRowsStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    _padRowsStack.alignment = NSLayoutAttributeLeading;
+    _padRowsStack.spacing = 4;
 
     _aspectPopup = [[NSPopUpButton alloc] init];
     [_aspectPopup addItemsWithTitles:@[@"TV (4:3)", @"Square pixels"]];
@@ -941,8 +967,11 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
                                         minValue:0 maxValue:100 target:self action:@selector(volumeChanged:)];
     [volume.widthAnchor constraintEqualToConstant:220].active = YES;
 
-    NSStackView *padRow = [NSStackView stackViewWithViews:@[_padList, _padPort]];
-    padRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    NSButton *resetControls = [NSButton buttonWithTitle:@"Reset Controls" target:self action:@selector(resetControls:)];
+    NSButton *openControllers = [NSButton buttonWithTitle:@"Open Controllers" target:self action:@selector(openControllers:)];
+    NSStackView *controlsRow = [NSStackView stackViewWithViews:@[resetControls, openControllers]];
+    controlsRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    controlsRow.spacing = 8;
 
     _externalField = [NSTextField textFieldWithString:
         @(studio2session_get_str(_session, "fujinet_external_addr", ""))];
@@ -972,10 +1001,13 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
         @[ [NSTextField labelWithString:@""], [self checkBoxForKey:"enable_audio" title:@"Audio" fallback:1] ],
         @[ [NSTextField labelWithString:@"Volume"], volume ],
         @[ [self sectionLabel:@"Input"], [self note:@"applied immediately; gamepads on/off restarts the session"] ],
+        @[ [NSTextField labelWithString:@""], [self checkBoxForKey:"enable_gamepad" title:@"Enable gamepads" fallback:1] ],
         @[ [NSTextField labelWithString:@""],
-           [self checkBoxForKey:"analog_joystick" title:@"Analog sticks steer too" fallback:1] ],
-        @[ [NSTextField labelWithString:@""], [self checkBoxForKey:"enable_gamepad" title:@"Gamepads" fallback:1] ],
-        @[ [NSTextField labelWithString:@"Gamepads"], padRow ],
+           [self checkBoxForKey:"analog_joystick" title:@"Analog sticks" fallback:1] ],
+        @[ [NSTextField labelWithString:@"Gamepads"], _padRowsStack ],
+        @[ [NSTextField labelWithString:@""], controlsRow ],
+        @[ [NSTextField labelWithString:@""],
+           [self note:@"keys and gamepad buttons are remapped in the Controllers window (F9)"] ],
         @[ [self sectionLabel:@"FujiNet"], [self note:@"applied by restarting the session when this window closes"] ],
         @[ [NSTextField labelWithString:@""], [self checkBoxForKey:"enable_fujinet" title:@"Enable FujiNet" fallback:1] ],
         @[ [NSTextField labelWithString:@""], [self checkBoxForKey:"fujinet_external" title:@"Use external FujiNet" fallback:0] ],
@@ -994,7 +1026,7 @@ static NSArray<UTType *> *typesForExtensions(NSArray<NSString *> *exts)
     root.edgeInsets = NSEdgeInsetsMake(16, 16, 16, 16);
 
     _settingsWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 640, 580)
+        initWithContentRect:NSMakeRect(0, 0, 640, 660)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
                     backing:NSBackingStoreBuffered
                       defer:NO];
