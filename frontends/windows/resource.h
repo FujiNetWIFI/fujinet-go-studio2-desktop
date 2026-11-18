@@ -13,7 +13,7 @@
 #define IDM_CLEAR          1006
 #define IDM_SETTINGS       1030
 #define IDM_EXIT           1031
-#define IDM_KEYPAD         1010
+#define IDM_CONTROLLERS    1010
 #define IDM_DEBUGGER       1013
 #define IDM_TV_ASPECT      1011
 #define IDM_SMOOTH         1012
@@ -30,8 +30,11 @@
 #define IDC_SET_AN_JOY     2004
 #define IDC_SET_ASPECT     2005
 #define IDC_SET_WEBUI      2006
-#define IDC_SET_PAD_LIST   2007
-#define IDC_SET_PAD_PORT   2008
+#define IDC_SET_PAD_NAME0  2020      /* per-pad rows: name label, then keypad combo */
+#define IDC_SET_PAD_PORT0  2030      /* (IDC_SET_PAD_*0 + row, rows 0..3) */
+#define IDC_SET_RESET_CTRL 2040
+#define IDC_SET_OPEN_CTRL  2041
+#define SET_PAD_ROWS       4
 #define IDC_SET_VOLUME     2009
 #define IDC_SET_FUJINET    2010
 #define IDC_SET_AUDIO      2011

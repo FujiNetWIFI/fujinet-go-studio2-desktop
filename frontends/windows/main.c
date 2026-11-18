@@ -31,7 +31,7 @@
 #include "studio2session.h"
 #include "debugger/dbg_window.h"
 #include "key_forward.h"
-#include "keypad/keypad_window.h"
+#include "controllers/controllers_window.h"
 #include "resource.h"
 
 #ifndef EM_SETCUEBANNER
@@ -246,13 +246,13 @@ static void poll_gamepads(void)
         g_pad_notice_until = GetTickCount() + PAD_NOTICE_MS;
         update_status();
     }
-    studio2_keypad_window_gamepads_changed();
+    studio2_controllers_refresh();
 }
 
 /* ---- menu ----------------------------------------------------------------- */
 
 /* A Machine menu item's label with the key it is bound to after the tab --
- * read from the bindings each time the menu opens, so a remap in the Keypad
+ * read from the bindings each time the menu opens, so a remap in the Controllers
  * window shows here. The key is only a label: there is no accelerator
  * table, so F3 and Escape reach the console through the bindings rather
  * than being eaten by the menu. */
@@ -297,7 +297,7 @@ static void build_menu(HWND hwnd)
     AppendMenuA(machine, MF_SEPARATOR, 0, NULL);
     AppendMenuA(machine, MF_STRING, IDM_EXIT, "E&xit");
 
-    AppendMenuA(view, MF_STRING, IDM_KEYPAD, "&Keypad\tF9");
+    AppendMenuA(view, MF_STRING, IDM_CONTROLLERS, "&Controllers (F9)");
     AppendMenuA(view, MF_STRING, IDM_DEBUGGER, "&Debugger\tF12");
     AppendMenuA(view, MF_SEPARATOR, 0, NULL);
     AppendMenuA(view, MF_STRING | (g_aspect ? MF_CHECKED : 0), IDM_TV_ASPECT, "&TV Aspect");
@@ -434,7 +434,8 @@ static void poll_needs_bios(void)
 
 static HWND g_settings_window;
 static int g_settings_dirty;
-static HWND g_pad_list, g_pad_port, g_bios_status;
+static HWND g_pad_name[SET_PAD_ROWS], g_pad_port[SET_PAD_ROWS], g_bios_status;
+static int g_pad_state[1 + 1 + 2 * SET_PAD_ROWS];   /* generation, count, assign/effective per row */
 
 static const char *aspect_name(int i)
 {
@@ -483,28 +484,44 @@ static void settings_bios_imported(void)
     set_text_utf8(g_bios_status, line, 0);
 }
 
-static void refresh_pad_list(void)
+/* The per-pad rows of the Input section: the pad's name and the keypad it
+ * drives now, and its Automatic / Keypad A / Keypad B choice. Rebuilt when
+ * the gamepad set or an assignment changed (here or in the Controllers
+ * window); rows beyond the connected pads are hidden. */
+static void refresh_pad_rows(int force)
 {
-    int i, n, sel;
-    if (!g_pad_list) return;
-    sel = (int)SendMessageA(g_pad_list, LB_GETCURSEL, 0, 0);
-    SendMessageA(g_pad_list, LB_RESETCONTENT, 0, 0);
+    int i, n, state[1 + 1 + 2 * SET_PAD_ROWS];
+    if (!g_pad_name[0]) return;
     n = studio2session_gamepad_count(g_session);
-    if (n == 0) {
-        SendMessageA(g_pad_list, LB_ADDSTRING, 0, (LPARAM)"(no gamepads connected)");
+    memset(state, 0, sizeof state);
+    state[0] = (int)studio2session_gamepad_generation(g_session);
+    state[1] = n;
+    for (i = 0; i < SET_PAD_ROWS && i < n; i++) {
+        state[2 + 2 * i] = studio2session_gamepad_assignment(g_session, i);
+        state[3 + 2 * i] = studio2session_gamepad_effective_port(g_session, i);
     }
-    for (i = 0; i < n; i++) {
+    if (!force && memcmp(state, g_pad_state, sizeof state) == 0) return;
+    memcpy(g_pad_state, state, sizeof state);
+    for (i = 0; i < SET_PAD_ROWS; i++) {
         char name[128], line[200];
-        int eff = studio2session_gamepad_effective_port(g_session, i);
+        if (i >= n) {
+            if (i == 0) {
+                set_text_utf8(g_pad_name[0], "(no gamepads connected)", 0);
+                ShowWindow(g_pad_name[0], SW_SHOW);
+            } else {
+                ShowWindow(g_pad_name[i], SW_HIDE);
+            }
+            ShowWindow(g_pad_port[i], SW_HIDE);
+            continue;
+        }
         studio2session_gamepad_name(g_session, i, name, sizeof name);
-        if (eff >= 0)
-            snprintf(line, sizeof line, "%s  [keypad %c%s]", name, 'A' + eff,
-                     studio2session_gamepad_assignment(g_session, i) < 0 ? ", automatic" : "");
-        else
-            snprintf(line, sizeof line, "%s  [unused]", name);
-        SendMessageA(g_pad_list, LB_ADDSTRING, 0, (LPARAM)line);
+        if (state[3 + 2 * i] >= 0) snprintf(line, sizeof line, "%s  (keypad %c)", name, 'A' + state[3 + 2 * i]);
+        else snprintf(line, sizeof line, "%s  (no keypad)", name);
+        set_text_utf8(g_pad_name[i], line, 0);
+        SendMessageA(g_pad_port[i], CB_SETCURSEL, (WPARAM)(state[2 + 2 * i] + 1), 0);
+        ShowWindow(g_pad_name[i], SW_SHOW);
+        ShowWindow(g_pad_port[i], SW_SHOW);
     }
-    if (sel >= 0 && sel < n) SendMessageA(g_pad_list, LB_SETCURSEL, (WPARAM)sel, 0);
 }
 
 static void open_web_ui(HWND owner)
@@ -552,22 +569,14 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             studio2session_set_analog(g_session,
                 SendMessageA(GetDlgItem(hwnd, IDC_SET_AN_JOY), BM_GETCHECK, 0, 0) == BST_CHECKED);
             return 0;
-        case IDC_SET_PAD_LIST:
-            if (HIWORD(wp) == LBN_SELCHANGE) {
-                int sel = (int)SendMessageA(g_pad_list, LB_GETCURSEL, 0, 0);
-                SendMessageA(g_pad_port, CB_SETCURSEL,
-                             (WPARAM)(studio2session_gamepad_assignment(g_session, sel) + 1), 0);
-            }
+        case IDC_SET_RESET_CTRL:
+            studio2session_bindings_reset(g_session);
+            studio2_controllers_refresh();
+            MessageBoxA(hwnd, "Every key and gamepad button is back to its default.", "Reset Controls",
+                        MB_ICONINFORMATION | MB_OK);
             return 0;
-        case IDC_SET_PAD_PORT:
-            if (HIWORD(wp) == CBN_SELCHANGE) {
-                int sel = (int)SendMessageA(g_pad_list, LB_GETCURSEL, 0, 0);
-                int choice = (int)SendMessageA(g_pad_port, CB_GETCURSEL, 0, 0);
-                if (sel >= 0 && sel < studio2session_gamepad_count(g_session))
-                    studio2session_gamepad_assign(g_session, sel, choice - 1);
-                refresh_pad_list();
-                studio2_keypad_window_gamepads_changed();
-            }
+        case IDC_SET_OPEN_CTRL:
+            studio2_controllers_show(g_hwnd, g_session);
             return 0;
         case IDC_SET_FUJINET: settings_apply_checkbox(hwnd, IDC_SET_FUJINET, "enable_fujinet", 1); return 0;
         case IDC_SET_EXTERNAL:
@@ -578,7 +587,18 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         case IDC_SET_WEBUI: open_web_ui(hwnd); return 0;
         case IDC_SET_AUDIO: settings_apply_checkbox(hwnd, IDC_SET_AUDIO, "enable_audio", 1); return 0;
         case IDC_SET_GAMEPAD: settings_apply_checkbox(hwnd, IDC_SET_GAMEPAD, "enable_gamepad", 1); return 0;
-        default: break;
+        default:
+            if (LOWORD(wp) >= IDC_SET_PAD_PORT0 && LOWORD(wp) < IDC_SET_PAD_PORT0 + SET_PAD_ROWS &&
+                HIWORD(wp) == CBN_SELCHANGE) {
+                const int row = LOWORD(wp) - IDC_SET_PAD_PORT0;
+                const int choice = (int)SendMessageA(g_pad_port[row], CB_GETCURSEL, 0, 0);
+                if (row < studio2session_gamepad_count(g_session))
+                    studio2session_gamepad_assign(g_session, row, choice - 1);
+                refresh_pad_rows(1);
+                studio2_controllers_refresh();
+                return 0;
+            }
+            break;
         }
         break;
     case WM_HSCROLL:
@@ -587,9 +607,7 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_TIMER:
         if (wp == IDT_SETTINGS_PADS) {
-            static unsigned seen;
-            unsigned gen = studio2session_gamepad_generation(g_session);
-            if (gen != seen) { seen = gen; refresh_pad_list(); }
+            refresh_pad_rows(0);
         }
         return 0;
     case WM_CLOSE: {
@@ -623,7 +641,9 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         KillTimer(hwnd, IDT_SETTINGS_PADS);
         g_settings_window = NULL;
-        g_pad_list = g_pad_port = g_bios_status = NULL;
+        memset(g_pad_name, 0, sizeof g_pad_name);
+        memset(g_pad_port, 0, sizeof g_pad_port);
+        g_bios_status = NULL;
         if (g_settings_dirty) {
             g_settings_dirty = 0;
             restart_session();
@@ -650,7 +670,7 @@ static HWND settings_label(HWND parent, HINSTANCE inst, const char *text, int x,
     return l;
 }
 
-/* A section heading, in bold like the Keypad window's. */
+/* A section heading, in bold like the Controllers window's. */
 static HWND settings_heading(HWND parent, HINSTANCE inst, HFONT bold, const char *text, int y)
 {
     HWND l = settings_label(parent, inst, text, 16, y, 440, 18);
@@ -747,20 +767,30 @@ static void show_settings(HINSTANCE inst)
     settings_checkbox(g_settings_window, inst, "Analog sticks steer too", IDC_SET_AN_JOY, 16, y, 300,
                       studio2session_get_int(g_session, "analog_joystick", 1));
     y += 30;
-    settings_label(g_settings_window, inst, "Gamepads (select one, then choose its keypad):", 16, y, 440, 18); y += 22;
-    g_pad_list = CreateWindowExA(WS_EX_CLIENTEDGE, "LISTBOX", "",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 16, y, 316, 70,
-        g_settings_window, (HMENU)(INT_PTR)IDC_SET_PAD_LIST, inst, NULL);
-    SendMessageA(g_pad_list, WM_SETFONT, (WPARAM)font, TRUE);
-    g_pad_port = CreateWindowExA(0, "COMBOBOX", "", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-        342, y, 110, 200, g_settings_window, (HMENU)(INT_PTR)IDC_SET_PAD_PORT, inst, NULL);
-    SendMessageA(g_pad_port, CB_ADDSTRING, 0, (LPARAM)"Automatic");
-    SendMessageA(g_pad_port, CB_ADDSTRING, 0, (LPARAM)"Keypad A");
-    SendMessageA(g_pad_port, CB_ADDSTRING, 0, (LPARAM)"Keypad B");
-    SendMessageA(g_pad_port, CB_SETCURSEL, 0, 0);
-    SendMessageA(g_pad_port, WM_SETFONT, (WPARAM)font, TRUE);
-    refresh_pad_list();
-    y += 80;
+    settings_label(g_settings_window, inst, "Gamepads (each one's keypad):", 16, y, 440, 18); y += 22;
+    {
+        int row;
+        for (row = 0; row < SET_PAD_ROWS; row++) {
+            HWND name = CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
+                16, y + 4, 316, 18, g_settings_window, (HMENU)(INT_PTR)(IDC_SET_PAD_NAME0 + row), inst, NULL);
+            HWND port = CreateWindowExA(0, "COMBOBOX", "", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+                342, y, 110, 200, g_settings_window, (HMENU)(INT_PTR)(IDC_SET_PAD_PORT0 + row), inst, NULL);
+            SendMessageA(name, WM_SETFONT, (WPARAM)font, TRUE);
+            SendMessageA(port, CB_ADDSTRING, 0, (LPARAM)"Automatic");
+            SendMessageA(port, CB_ADDSTRING, 0, (LPARAM)"Keypad A");
+            SendMessageA(port, CB_ADDSTRING, 0, (LPARAM)"Keypad B");
+            SendMessageA(port, CB_SETCURSEL, 0, 0);
+            SendMessageA(port, WM_SETFONT, (WPARAM)font, TRUE);
+            g_pad_name[row] = name;
+            g_pad_port[row] = port;
+            y += 28;
+        }
+    }
+    refresh_pad_rows(1);
+    y += 4;
+    settings_button(g_settings_window, inst, "Reset Controls", IDC_SET_RESET_CTRL, 16, y, 130);
+    settings_button(g_settings_window, inst, "Open Controllers", IDC_SET_OPEN_CTRL, 156, y, 140);
+    y += 38;
 
     settings_heading(g_settings_window, inst, bold, "FujiNet", y); y += 22;
     settings_checkbox(g_settings_window, inst, "Enable FujiNet (applied when this window closes)", IDC_SET_FUJINET,
@@ -980,7 +1010,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         uint32_t ks;
         int sa;
         const int ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-        if (wp == VK_F9) { studio2_keypad_window_toggle(hwnd, g_session); return 0; }
+        if (wp == VK_F9) { studio2_controllers_toggle(hwnd, g_session); return 0; }
         if (wp == VK_F12) { studio2_debugger_toggle(hwnd, g_session); return 0; }
         if (wp == VK_F11) { toggle_fullscreen(hwnd); return 0; }
         if (msg == WM_SYSKEYDOWN) {
@@ -1073,7 +1103,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
          * would fall between two looks. */
         case IDM_CLEAR: studio2session_clear(g_session); update_status(); return 0;
         case IDM_RESET_CONFIG: run_sysaction(STUDIO2_SYSACT_RESET_CONFIG); update_status(); return 0;
-        case IDM_KEYPAD: studio2_keypad_window_toggle(hwnd, g_session); return 0;
+        case IDM_CONTROLLERS: studio2_controllers_toggle(hwnd, g_session); return 0;
         case IDM_DEBUGGER: studio2_debugger_toggle(hwnd, g_session); return 0;
         case IDM_FULLSCREEN: toggle_fullscreen(hwnd); return 0;
         case IDM_TV_ASPECT: {
@@ -1232,10 +1262,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     g_pad_generation = studio2session_gamepad_generation(g_session);
     SetTimer(g_hwnd, IDT_STATUS, 1000, NULL);
-    SetTimer(g_hwnd, IDT_SYSACT, 100, NULL);
+    SetTimer(g_hwnd, IDT_SYSACT, 50, NULL);
     update_status();
 
-    if (env_on("STUDIO2_OPEN_KEYPAD")) studio2_keypad_window_toggle(g_hwnd, g_session);
+    if (env_on("STUDIO2_OPEN_CONTROLLERS") || env_on("STUDIO2_OPEN_KEYPAD"))
+        studio2_controllers_show(g_hwnd, g_session);
     if (env_on("STUDIO2_OPEN_DEBUGGER")) studio2_debugger_show(g_hwnd, g_session);
     if (env_on("STUDIO2_OPEN_SETTINGS")) show_settings(inst);
 
@@ -1245,7 +1276,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         /* Before TranslateMessage, so the sub-windows' keys reach them
          * regardless of which child control has the focus. */
         if (studio2_debugger_pretranslate(&msg)) continue;
-        if (studio2_keypad_pretranslate(&msg)) continue;
         if (studio2_help_pretranslate(&msg)) continue;
         TranslateMessage(&msg);
         DispatchMessage(&msg);
