@@ -26,7 +26,7 @@ add_executable(fujinet-go-studio2-kde
   SettingsDialog.cpp
   FujiNetWindows.cpp
   help/HelpWindow.cpp
-  keypad/KeypadWindow.cpp
+  controllers/ControllersWindow.cpp
   debugger/DebuggerWindow.cpp
   debugger/VideoTab.cpp
 )
@@ -61,7 +61,7 @@ if(Qt6Test_FOUND)
                  MainWindow.cpp DisplayWidget.cpp SoftDisplayWidget.cpp
                  FrameFeed.cpp SettingsDialog.cpp KeyForward.cpp
                  FujiNetWindows.cpp help/HelpWindow.cpp
-                 keypad/KeypadWindow.cpp)
+                 controllers/ControllersWindow.cpp)
   set_target_properties(debugger_test PROPERTIES CXX_STANDARD 17)
   target_link_libraries(debugger_test PRIVATE studio2_session studio2_bios_full Qt6::Widgets
                         Qt6::GuiPrivate Qt6::Test)

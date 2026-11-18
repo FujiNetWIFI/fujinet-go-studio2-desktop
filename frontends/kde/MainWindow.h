@@ -13,7 +13,6 @@
 #include "studio2session.h"
 
 class DisplayView;
-class KeypadWindow;
 class QAction;
 
 class MainWindow : public QMainWindow {
@@ -40,8 +39,8 @@ private:
     void runSysaction(int sa);
     void checkNeedsBios();
     void openCart(const QString &path);
-    void toggleKeypad();
-    void pollGamepads();
+    void toggleControllers();
+    void showToast(const QString &msg);
     void applyPicture();
     void useSoftwareDisplay();
     void showSettings();
@@ -50,12 +49,10 @@ private:
 
     studio2session *m_session;
     DisplayView *m_display = nullptr;
-    KeypadWindow *m_keypad = nullptr;
     QLabel *m_status = nullptr;
     QLabel *m_dot = nullptr;
     QTimer m_statusTimer;
     QTimer m_sysactTimer;
-    QTimer m_padTimer;
     QAction *m_tvAction = nullptr;
     QAction *m_smoothAction = nullptr;
     /* the Machine menu's console controls, labelled with their bound keys */

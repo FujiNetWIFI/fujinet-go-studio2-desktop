@@ -30,7 +30,7 @@
 #include "SettingsDialog.h"
 #include "debugger/DebuggerWindow.h"
 #include "help/HelpWindow.h"
-#include "keypad/KeypadWindow.h"
+#include "controllers/ControllersWindow.h"
 
 static const char *const kCartFilter =
     "RCA Studio II cartridges (*.st2 *.bin *.rom *.ST2 *.BIN *.ROM);;"
@@ -66,14 +66,14 @@ MainWindow::MainWindow(studio2session *session, QWidget *parent)
     /* The gamepad thread cannot call into Qt; it posts system actions and
      * this timer takes them. */
     connect(&m_sysactTimer, &QTimer::timeout, this, &MainWindow::drainSysactions);
-    m_sysactTimer.start(100);
-    /* Gamepads come and go on their own thread; say so when they do. */
+    m_sysactTimer.start(50);
+    /* Gamepads come and go on their own thread; say so when they do (the
+     * same timer: a pad generation change is announced within 50 ms). */
     m_padGen = studio2session_gamepad_generation(session);
-    connect(&m_padTimer, &QTimer::timeout, this, &MainWindow::pollGamepads);
-    m_padTimer.start(250);
 
-    if (qEnvironmentVariableIsSet("STUDIO2_OPEN_KEYPAD"))
-        toggleKeypad();
+    /* (STUDIO2_OPEN_KEYPAD is the Controllers window's old name) */
+    if (qEnvironmentVariableIsSet("STUDIO2_OPEN_CONTROLLERS") || qEnvironmentVariableIsSet("STUDIO2_OPEN_KEYPAD"))
+        QTimer::singleShot(0, this, [this] { toggleControllers(); });
     /* once the event loop runs, i.e. after main() has started the session:
      * attaching before the machine exists would not stop it */
     if (qEnvironmentVariableIsSet("STUDIO2_OPEN_DEBUGGER"))
@@ -125,8 +125,8 @@ void MainWindow::buildMenus()
     machine->addAction(QStringLiteral("&Quit"), QKeySequence::Quit, this, [this] { close(); });
 
     QMenu *view = menuBar()->addMenu(QStringLiteral("&View"));
-    view->addAction(QStringLiteral("&Keypad"), QKeySequence(Qt::Key_F9), this,
-                    &MainWindow::toggleKeypad);
+    view->addAction(QStringLiteral("&Controllers (F9)"), QKeySequence(Qt::Key_F9), this,
+                    &MainWindow::toggleControllers);
     view->addAction(QStringLiteral("&Debugger"), QKeySequence(Qt::Key_F12), this,
                     [this] { DebuggerWindow::toggleFor(this, m_session); });
     view->addSeparator();
@@ -217,10 +217,13 @@ void MainWindow::showAbout()
 
 void MainWindow::showSettings()
 {
-    const bool restart = SettingsDialog::run(this, m_session);
+    bool openControllers = false;
+    const bool restart = SettingsDialog::run(this, m_session, QString::fromLocal8Bit(qgetenv("STUDIO2_OPEN_PREFS")), &openControllers);
+    studio2ControllersRefresh();
     applyPicture();
     syncMachineMenu();
     if (restart) restartSession();
+    if (openControllers) studio2ControllersShow(this, m_session);
 }
 
 void MainWindow::useSoftwareDisplay()
@@ -243,16 +246,6 @@ void MainWindow::applyPicture()
     if (m_smoothAction) m_smoothAction->setChecked(smooth);
 }
 
-void MainWindow::pollGamepads()
-{
-    const unsigned gen = studio2session_gamepad_generation(m_session);
-    if (gen == m_padGen) return;
-    m_padGen = gen;
-    char msg[160];
-    if (studio2session_gamepad_last_event(m_session, msg, sizeof msg) > 0)
-        statusBar()->showMessage(QString::fromUtf8(msg), 4000);
-}
-
 /* A machine option changed: a power cycle with the new settings (a full
  * restart when FujiNet, audio or the gamepads were switched). */
 void MainWindow::restartSession()
@@ -265,11 +258,16 @@ void MainWindow::restartSession()
     statusBar()->showMessage(QStringLiteral("Machine options applied (power cycled)"), 5000);
 }
 
-void MainWindow::toggleKeypad()
+void MainWindow::toggleControllers()
 {
-    if (!m_keypad) m_keypad = new KeypadWindow(m_session, this);
-    if (m_keypad->isVisible()) m_keypad->hide();
-    else m_keypad->show();
+    /* Hidden, not destroyed: a remap in progress and the window's position
+     * both survive closing it. */
+    studio2ControllersToggle(this, m_session);
+}
+
+void MainWindow::showToast(const QString &msg)
+{
+    statusBar()->showMessage(msg, 4000);
 }
 
 void MainWindow::runSysaction(int sa)
@@ -290,6 +288,14 @@ void MainWindow::drainSysactions()
 {
     int sa;
     while (studio2session_sysaction_take(m_session, &sa)) runSysaction(sa);
+
+    const unsigned gen = studio2session_gamepad_generation(m_session);
+    if (gen != m_padGen) {
+        m_padGen = gen;
+        char msg[160];
+        if (studio2session_gamepad_last_event(m_session, msg, sizeof msg) > 0)
+            showToast(QString::fromUtf8(msg));
+    }
 }
 
 void MainWindow::updateStatus()
@@ -388,7 +394,7 @@ void MainWindow::loadMedia(const QString &path)
 void MainWindow::keyPressEvent(QKeyEvent *e)
 {
     if (e->isAutoRepeat()) return;
-    if (e->key() == Qt::Key_F9) { toggleKeypad(); return; }
+    if (e->key() == Qt::Key_F9) { toggleControllers(); return; }
     if (e->key() == Qt::Key_F12) { DebuggerWindow::toggleFor(this, m_session); return; }
     /* Ctrl chords are the menus' shortcuts. Alt is not: Left Alt is keypad
      * A's 0 (MAME's key), and the menus' Alt+letter mnemonics are taken as
@@ -421,7 +427,7 @@ void MainWindow::keyReleaseEvent(QKeyEvent *e)
 
 bool MainWindow::event(QEvent *e)
 {
-    if (e->type() == QEvent::WindowDeactivate) {
+    if (e->type() == QEvent::WindowDeactivate && !studio2ControllersActive()) {
         studio2session_release_all(m_session);
         for (bool &d : m_sysactDown) d = false;
     }
@@ -445,6 +451,5 @@ void MainWindow::closeEvent(QCloseEvent *e)
 {
     m_statusTimer.stop();
     m_sysactTimer.stop();
-    m_padTimer.stop();
     QMainWindow::closeEvent(e);
 }

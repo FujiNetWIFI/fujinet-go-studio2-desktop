@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSlider>
+#include <QTabWidget>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -96,12 +97,18 @@ int SettingsDialog::importBios(QWidget *parent, studio2session *session, const Q
     return idx;
 }
 
-bool SettingsDialog::run(QWidget *parent, studio2session *session)
+bool SettingsDialog::run(QWidget *parent, studio2session *session, const QString &startTab,
+                         bool *openControllers)
 {
     QDialog dlg(parent);
     dlg.setWindowTitle(QStringLiteral("Preferences"));
     dlg.setMinimumWidth(640);
     auto *outer = new QVBoxLayout(&dlg);
+    auto *tabs = new QTabWidget;
+    auto *machinePage = new QWidget;
+    auto *mpl = new QVBoxLayout(machinePage);
+    auto *inputPage = new QWidget;
+    auto *ipl = new QVBoxLayout(inputPage);
 
     /* Machine (power cycle) */
     auto *machine = new QGroupBox(QStringLiteral("Machine (applied by power-cycling the console)"));
@@ -120,7 +127,7 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
                                "Off always boots the stand-in, which runs CONFIG and the FujiNet "
                                "apps but no games", session, "use_bios", 1);
     mform->addRow(useBios);
-    outer->addWidget(machine);
+    mpl->addWidget(machine);
 
     /* Importing is a file operation, done now; the BIOS boots at the next
      * power cycle, which OK then gives it. */
@@ -147,7 +154,7 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
                      [=](bool on) { studio2session_set_int(session, "aspect", on ? 0 : 1); });
     QObject::connect(smooth, &QCheckBox::toggled, &dlg,
                      [=](bool on) { studio2session_set_int(session, "smooth", on ? 1 : 0); });
-    outer->addWidget(picture);
+    mpl->addWidget(picture);
 
     /* Audio: the device needs a restart, the volume is live */
     auto *audio = new QGroupBox(QStringLiteral("Audio"));
@@ -159,20 +166,20 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     volume->setValue(studio2session_get_int(session, "volume", 100));
     QObject::connect(volume, &QSlider::valueChanged, &dlg, [=](int v) { studio2session_set_volume(session, v); });
     audioForm->addRow(QStringLiteral("Volume"), volume);
-    outer->addWidget(audio);
+    mpl->addWidget(audio);
 
     /* Input: the gamepad thread needs a restart, the rest is live */
     auto *input = new QGroupBox(QStringLiteral("Input"));
     auto *inForm = new QFormLayout(input);
-    QCheckBox *gp = check("Gamepads (applied by restarting the session)", "Poll USB/Bluetooth gamepads", session, "enable_gamepad", 1);
+    QCheckBox *gp = check("Enable gamepads (applied by restarting the session)", "Poll USB/Bluetooth gamepads", session, "enable_gamepad", 1);
     inForm->addRow(gp);
-    QCheckBox *aj = check("Analog sticks steer too", "The left stick presses 2 4 6 8 (and 1 3 7 9 on the diagonals), as the D-pad does", session, "analog_joystick", 1);
+    QCheckBox *aj = check("Analog sticks", "The left stick presses 2 4 6 8 (and 1 3 7 9 on the diagonals), as the D-pad does", session, "analog_joystick", 1);
     QObject::connect(aj, &QCheckBox::toggled, &dlg, [=](bool on) { studio2session_set_analog(session, on ? 1 : 0); });
     inForm->addRow(aj);
-    outer->addWidget(input);
+    ipl->addWidget(input);
 
     /* Gamepads: one row per pad, refreshed as they come and go */
-    auto *pads = new QGroupBox(QStringLiteral("Gamepads (assigned to keypads in connection order unless chosen here)"));
+    auto *pads = new QGroupBox(QStringLiteral("Gamepads (the first plays keypad A, the next keypad B, unless chosen here)"));
     auto *padForm = new QFormLayout(pads);
     std::vector<QWidget *> padRows;
     unsigned seenGen = studio2session_gamepad_generation(session) + 1;
@@ -210,7 +217,37 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     padTimer->start(1000);
     seenGen = studio2session_gamepad_generation(session);
     rebuildPads();
-    outer->addWidget(pads);
+    ipl->addWidget(pads);
+
+    /* Controls: the keys and pad buttons are re-mapped in the Controllers window */
+    auto *controls = new QGroupBox(QStringLiteral("Controls"));
+    auto *controlsLayout = new QVBoxLayout(controls);
+    auto *controlsNote = new QLabel(QStringLiteral(
+        "Keys and gamepad buttons are re-mapped in the Controllers window (Map)."));
+    controlsNote->setWordWrap(true);
+    controlsNote->setStyleSheet(QStringLiteral("color: gray;"));
+    controlsLayout->addWidget(controlsNote);
+    auto *controlsRow = new QHBoxLayout;
+    auto *resetControls = new QPushButton(QStringLiteral("Reset Controls"));
+    resetControls->setToolTip(QStringLiteral("Put every key and gamepad button back to its default"));
+    auto *openWindow = new QPushButton(QStringLiteral("Open Controllers"));
+    openWindow->setToolTip(QStringLiteral("Close Preferences and open the Controllers window"));
+    controlsRow->addWidget(resetControls);
+    controlsRow->addWidget(openWindow);
+    controlsRow->addStretch(1);
+    controlsLayout->addLayout(controlsRow);
+    auto *controlsState = new QLabel;
+    controlsLayout->addWidget(controlsState);
+    ipl->addWidget(controls);
+    ipl->addStretch(1);
+    QObject::connect(resetControls, &QPushButton::clicked, &dlg, [session, controlsState] {
+        studio2session_bindings_reset(session);
+        controlsState->setText(QStringLiteral("Every key and gamepad button is back to its default."));
+    });
+    QObject::connect(openWindow, &QPushButton::clicked, &dlg, [&dlg, openControllers] {
+        if (openControllers) *openControllers = true;
+        dlg.accept();
+    });
 
     /* FujiNet (restart) */
     auto *fujiBox = new QGroupBox(QStringLiteral("FujiNet"));
@@ -235,10 +272,20 @@ bool SettingsDialog::run(QWidget *parent, studio2session *session)
     webRow->addWidget(web, 1);
     webRow->addWidget(open);
     fform->addRow(QStringLiteral("Web UI"), webRow);
-    outer->addWidget(fujiBox);
+    mpl->addWidget(fujiBox);
+    mpl->addStretch(1);
+    tabs->addTab(machinePage, QStringLiteral("Machine"));
+    const int inputTab = tabs->addTab(inputPage, QStringLiteral("Input"));
+    if (startTab == QLatin1String("Input")) tabs->setCurrentIndex(inputTab);
+    outer->addWidget(tabs);
 
     /* Help, F1 and Ctrl+Shift+H (the app's shortcuts don't reach a modal dialog) */
-    dlg.setProperty("studio2HelpContext", QStringLiteral("prefs/Machine"));
+    auto pageContext = [inputTab](int i) {
+        return i == inputTab ? QStringLiteral("prefs/Input") : QStringLiteral("prefs/Machine");
+    };
+    dlg.setProperty("studio2HelpContext", pageContext(tabs->currentIndex()));
+    QObject::connect(tabs, &QTabWidget::currentChanged, &dlg,
+                     [&dlg, pageContext](int i) { dlg.setProperty("studio2HelpContext", pageContext(i)); });
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Help);
     QObject::connect(buttons, &QDialogButtonBox::helpRequested, &dlg, [&dlg] { studio2HelpFor(&dlg); });
     for (const char *key : { "F1", "Ctrl+Shift+H" })

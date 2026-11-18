@@ -19,8 +19,10 @@ extern "C" {
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
-    /* Returns true if a restart option changed. */
-    static bool run(QWidget *parent, studio2session *session);
+    /* Returns true if a restart option changed. startTab "Input" opens that
+     * page; *openControllers is set when "Open Controllers" closed it. */
+    static bool run(QWidget *parent, studio2session *session, const QString &startTab = QString(),
+                    bool *openControllers = nullptr);
     /* Import BIOS: the user's own Studio II BIOS (the 2K set, the 1K system
      * ROM, or one of MAME's four 512-byte ROMs), from `path` or, when it is
      * empty, a file chooser. Shows the session's message, which always says

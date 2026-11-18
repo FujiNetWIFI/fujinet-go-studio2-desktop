@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 
     int rc;
     /* The windows go before the session does: the debugger and the
-     * Keypad window still call into it as they are hidden, and the main
+     * Controllers window still call into it as they are hidden, and the main
      * window can close with either of them up. */
     {
         MainWindow win(session);
