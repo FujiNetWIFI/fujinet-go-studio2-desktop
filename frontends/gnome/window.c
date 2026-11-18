@@ -25,7 +25,7 @@
 #include "help/help_window.h"
 #include "prefs.h"
 #include "debugger/dbg_window.h"
-#include "keypad/keypad_window.h"
+#include "controllers/controllers_window.h"
 
 #include <string.h>
 
@@ -158,7 +158,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
     /* The window's own keys, deliberately not bindable: they are how you
      * reach the panels that do the binding. */
     if (keyval == GDK_KEY_F9) {
-        studio2_keypad_window_toggle(GTK_WINDOW(self), self->session);
+        studio2_controllers_toggle(GTK_WINDOW(self), self->session);
         return TRUE;
     }
     if (keyval == GDK_KEY_F12) {
@@ -228,7 +228,7 @@ static void on_focus_leave(GtkEventControllerFocus *ctrl, gpointer user_data)
 /* ---- the Console menu: labels that follow the bindings ----------------------- */
 
 /* "CLEAR (F3)": the item's name and whatever key drives its target now (a
- * remap in the Keypad window shows here within a quarter second). The
+ * remap in the Controllers window shows here within a quarter second). The
  * mnemonics are unique across the whole menu. */
 static void item_label(Studio2Window *self, char *dst, int dstsz, const char *name,
                        int target)
@@ -644,11 +644,11 @@ static void action_reset_config(GSimpleAction *a, GVariant *p, gpointer user_dat
     studio2_window_run_sysaction(user_data, STUDIO2_SYSACT_RESET_CONFIG);
 }
 
-static void action_keypad(GSimpleAction *a, GVariant *p, gpointer user_data)
+static void action_controllers(GSimpleAction *a, GVariant *p, gpointer user_data)
 {
     Studio2Window *self = user_data;
     (void)a; (void)p;
-    studio2_keypad_window_toggle(GTK_WINDOW(self), self->session);
+    studio2_controllers_toggle(GTK_WINDOW(self), self->session);
 }
 
 static void action_debugger(GSimpleAction *a, GVariant *p, gpointer user_data)
@@ -796,7 +796,7 @@ static const GActionEntry win_actions[] = {
     { "import-bios", action_import_bios, NULL, NULL, NULL, { 0 } },
     { "clear", action_clear, NULL, NULL, NULL, { 0 } },
     { "reset-config", action_reset_config, NULL, NULL, NULL, { 0 } },
-    { "keypad", action_keypad, NULL, NULL, NULL, { 0 } },
+    { "controllers", action_controllers, NULL, NULL, NULL, { 0 } },
     { "debugger", action_debugger, NULL, NULL, NULL, { 0 } },
     { "fullscreen", action_fullscreen, NULL, NULL, NULL, { 0 } },
     { "tv-aspect", action_aspect, NULL, "true", NULL, { 0 } },
@@ -828,7 +828,7 @@ static GMenu *build_menu(Studio2Window *self)
     self->console_menu = g_menu_new();
     g_menu_append_section(menu, "Console", G_MENU_MODEL(self->console_menu));
 
-    g_menu_append(view, "_Keypad (F9)", "win.keypad");
+    g_menu_append(view, "Cont_rollers (F9)", "win.controllers");
     g_menu_append(view, "_Debugger (F12)", "win.debugger");
     g_menu_append(view, "_TV Aspect", "win.tv-aspect");
     g_menu_append(view, "S_mooth Scaling", "win.smooth");
@@ -978,17 +978,19 @@ GtkWidget *studio2_window_new(AdwApplication *app, studio2session *session)
     /* The current pad set is the baseline: no toast for pads that were
      * already plugged in at launch. */
     self->pad_generation = studio2session_gamepad_generation(session);
-    self->sysact_id = g_timeout_add(250, sysact_drain_tick, self);
+    self->sysact_id = g_timeout_add(50, sysact_drain_tick, self);
     sync_console_menu(self);
     update_status(self);
 
-    /* STUDIO2_OPEN_KEYPAD=1 / STUDIO2_OPEN_DEBUGGER=1 / STUDIO2_OPEN_SETTINGS=1
+    /* STUDIO2_OPEN_CONTROLLERS=1 / STUDIO2_OPEN_DEBUGGER=1 / STUDIO2_OPEN_SETTINGS=1
      * open those windows at launch, following the family's convention: the
      * way in when the app misbehaves before the menu is reachable. */
     {
-        const char *env = g_getenv("STUDIO2_OPEN_KEYPAD");
+        const char *env = g_getenv("STUDIO2_OPEN_CONTROLLERS");
+        if (!env)
+            env = g_getenv("STUDIO2_OPEN_KEYPAD");   /* the older name */
         if (env && *env && *env != '0')
-            studio2_keypad_window_toggle(GTK_WINDOW(self), session);
+            studio2_controllers_toggle(GTK_WINDOW(self), session);
         env = g_getenv("STUDIO2_OPEN_DEBUGGER");
         if (env && *env && *env != '0')
             studio2_debugger_show(GTK_WINDOW(self), session);

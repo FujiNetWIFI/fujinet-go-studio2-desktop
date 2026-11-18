@@ -23,6 +23,7 @@
 #include "fujilog.h"
 #include "window.h"
 #include "help/help_window.h"
+#include "controllers/controllers_window.h"
 
 #include <string.h>
 
@@ -344,6 +345,22 @@ static gboolean pad_tick(gpointer user_data)
 
 /* ---- FujiNet ------------------------------------------------------------------ */
 
+static void on_open_controllers(GtkButton *b, gpointer user_data)
+{
+    PrefsState *state = user_data;
+    (void)b;
+    studio2_controllers_show(GTK_WINDOW(state->window), state->session);
+}
+
+static void on_reset_controls(GtkButton *b, gpointer user_data)
+{
+    PrefsState *state = user_data;
+    (void)b;
+    studio2session_bindings_reset(state->session);
+    adw_preferences_dialog_add_toast(ADW_PREFERENCES_DIALOG(state->dialog),
+                                     adw_toast_new("Controls back to their defaults"));
+}
+
 static void on_open_webui(GtkButton *b, gpointer user_data)
 {
     PrefsState *state = user_data;
@@ -440,6 +457,7 @@ void studio2_prefs_show(Studio2Window *parent, studio2session *session,
 
     /* ---- input */
     adw_preferences_group_set_title(input, "Input");
+    adw_preferences_group_set_header_suffix(input, studio2_help_button("prefs/Input"));
     adw_preferences_group_add(input,
         switch_row(state, "Enable gamepads", "Poll USB/Bluetooth gamepads "
                    "(applied when Preferences closes)", "enable_gamepad", 1, 0));
@@ -447,6 +465,21 @@ void studio2_prefs_show(Studio2Window *parent, studio2session *session,
         switch_row(state, "Analog sticks steer too",
                    "The left stick presses 2 4 6 8 (and 1 3 7 9 on the diagonals) "
                    "as the D-pad does", "analog_joystick", 1, 1));
+    {
+        GtkWidget *row = info_row("Controllers window (F9)",
+                                  "Map any key to a key or gamepad button");
+        GtkWidget *open = gtk_button_new_with_label("Open Controllers");
+        gtk_widget_set_valign(open, GTK_ALIGN_CENTER);
+        g_signal_connect(open, "clicked", G_CALLBACK(on_open_controllers), state);
+        adw_action_row_add_suffix(ADW_ACTION_ROW(row), open);
+        adw_preferences_group_add(input, row);
+        row = info_row("Reset Controls", "Put every key and gamepad button back to its default");
+        open = gtk_button_new_with_label("Reset Controls");
+        gtk_widget_set_valign(open, GTK_ALIGN_CENTER);
+        g_signal_connect(open, "clicked", G_CALLBACK(on_reset_controls), state);
+        adw_action_row_add_suffix(ADW_ACTION_ROW(row), open);
+        adw_preferences_group_add(input, row);
+    }
 
     adw_preferences_group_set_title(pads, "Gamepads");
     adw_preferences_group_set_description(pads,
